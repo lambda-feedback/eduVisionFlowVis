@@ -14,6 +14,12 @@ RUN --mount=type=cache,target=$POETRY_CACHE_DIR \
 
 FROM ghcr.io/lambda-feedback/evaluation-function-base/python:3.12
 
+# System libraries opencv-python (pulled in by ultralytics) needs to import
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
 

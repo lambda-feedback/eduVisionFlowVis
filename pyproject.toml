@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "evaluation_function"
 version = "0.0.1"
-description = ""
+description = "Lambda Feedback evaluation function that lists the objects a YOLO object-detection model finds in uploaded photos."
 authors = ["Andreas Pfurtscheller <andreas.pfurtscheller23@ic.ac.uk>"]
 readme = "README.md"
 packages = [{ include = "evaluation_function" }]
@@ -16,6 +16,17 @@ typing_extensions = "^4.12.2"
 lf_toolkit = { git = "https://github.com/lambda-feedback/toolkit-python.git", branch = "main", extras = [
     "ipc",
 ] }
+ultralytics = "^8.4.8"
+pillow = "^12.1.0"
+# Not opencv-python-headless: ultralytics already requires opencv-python, and
+# both install into the same `cv2` directory, so having the two side by side
+# can leave a corrupted cv2 binary after a parallel install. The Dockerfile
+# installs the system libraries opencv-python needs instead.
+opencv-python = "^4.12.0.88"
+# torchvision <= 0.12 declares an unpinned torch dependency, so without a
+# lower bound the resolver pairs a current torch with an incompatible
+# torchvision. Newer releases pin their matching torch version.
+torchvision = ">=0.22.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
