@@ -6,8 +6,6 @@ from PIL import Image, ImageOps
 import io
 import requests
 import random
-import numpy as np
-import cv2
 import time
 
 
@@ -97,6 +95,11 @@ def evaluation_function(
         return tuple(random.choices(range(50, 256), k=3))
 
     def draw_annotations_cv2(img, detections):
+        # Imported here rather than at module level: cv2 and numpy load large
+        # shared libraries, which slows the cold start before the IPC server
+        # can open its socket. Only drawing needs them.
+        import cv2
+        import numpy as np
 
         img_cv = np.array(img)
 
@@ -252,10 +255,10 @@ def evaluation_function(
                 {"annotated": annotated, "detections": detections, "load_error": None}
             )
 
-        avg_load_time = np.mean(load_times) if load_times else 0.0
-        avg_prediction_time = np.mean(prediction_times) if prediction_times else 0.0
-        avg_process_time = np.mean(process_times) if process_times else 0.0
-        avg_draw_time = np.mean(draw_times) if draw_times else 0.0
+        avg_load_time = sum(load_times) / len(load_times) if load_times else 0.0
+        avg_prediction_time = sum(prediction_times) / len(prediction_times) if prediction_times else 0.0
+        avg_process_time = sum(process_times) / len(process_times) if process_times else 0.0
+        avg_draw_time = sum(draw_times) / len(draw_times) if draw_times else 0.0
 
         return (
             per_image,
@@ -313,7 +316,7 @@ def evaluation_function(
             append_feedback(f"Separator [{idx}]", " \n\n---\n\n")
             upload_times.append(0.0)
 
-    avg_upload_time = np.mean(upload_times) if upload_times else 0.0
+    avg_upload_time = sum(upload_times) / len(upload_times) if upload_times else 0.0
 
     feedback_time = time.time() - feedback_start
 

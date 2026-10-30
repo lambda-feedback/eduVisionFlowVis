@@ -26,11 +26,13 @@ ENV VIRTUAL_ENV=/app/.venv \
 
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
-# Precompile python files for faster startup
-RUN python -m compileall -q .
-
 # Copy the evaluation function to the app directory
 COPY evaluation_function ./evaluation_function
+
+# Precompile python files for faster startup. Runs after the COPY so the
+# function's own code is included: Lambda's filesystem is read-only, so
+# anything not compiled here is recompiled on every cold start.
+RUN python -m compileall -q .
 
 # Command to start the evaluation function with
 ENV FUNCTION_COMMAND="python"
