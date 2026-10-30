@@ -2,7 +2,6 @@ import os
 from typing import Any
 from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image
-from ultralytics import YOLO
 from PIL import Image, ImageOps
 import io
 import requests
@@ -47,6 +46,11 @@ def evaluation_function(
 
     # Use a dict to cache models by name
     if model_name not in _model_cache:
+        # Imported here rather than at module level: importing ultralytics
+        # pulls in torch, which takes longer than Lambda's 10 s init window
+        # on a cold start. Deferring it lets the IPC server start first.
+        from ultralytics import YOLO
+
         model_dir = os.path.dirname(os.path.abspath(__file__))
         # Strip any directory components so `model_name` can't be used to
         # load a model file from outside the evaluation_function directory.

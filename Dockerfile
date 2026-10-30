@@ -1,6 +1,7 @@
 FROM ghcr.io/lambda-feedback/evaluation-function-base/python:3.12 AS builder
 
-RUN pip install poetry==1.8.3
+# Must match the Poetry major version that generated poetry.lock
+RUN pip install "poetry>=2,<3"
 
 ENV POETRY_NO_INTERACTION=1 \
     POETRY_VIRTUALENVS_IN_PROJECT=1 \
