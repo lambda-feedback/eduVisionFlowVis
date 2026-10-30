@@ -40,7 +40,11 @@ ENV FUNCTION_COMMAND="python"
 # Args to start the evaluation function with
 ENV FUNCTION_ARGS="-m,evaluation_function.main"
 
-# The transport to use for the RPC server
-ENV FUNCTION_RPC_TRANSPORT="ipc"
+# Talk to the worker over stdio rather than an IPC socket. With ipc, shimmy
+# blocks Lambda's 10 s init until Python has opened the socket, which the
+# torch import can't do on a cold start. With stdio, init returns at once and
+# the request waits on stdin while Python finishes importing.
+ENV FUNCTION_INTERFACE="rpc"
+ENV FUNCTION_RPC_TRANSPORT="stdio"
 
 ENV LOG_LEVEL="debug"
