@@ -47,4 +47,12 @@ ENV FUNCTION_ARGS="-m,evaluation_function.main"
 ENV FUNCTION_INTERFACE="rpc"
 ENV FUNCTION_RPC_TRANSPORT="stdio"
 
+# The first request after a cold start waits for torch/ultralytics to import
+# and the model to load, which takes longer than shimmy's 30 s default.
+ENV FUNCTION_WORKER_SEND_TIMEOUT="90s"
+
+# TEMPORARY: log per-module import times to stderr (shimmy forwards it to
+# CloudWatch) to find what dominates the cold start. Remove once measured.
+ENV PYTHONPROFILEIMPORTTIME=1
+
 ENV LOG_LEVEL="debug"
