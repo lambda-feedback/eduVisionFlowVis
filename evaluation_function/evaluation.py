@@ -15,6 +15,24 @@ import time
 # Cache for loaded models by name
 _model_cache = {}
 
+DEFAULT_MODEL_NAME = "best.pt"
+
+
+def _load_model(model_name):
+    if model_name not in _model_cache:
+        model_dir = os.path.dirname(os.path.abspath(__file__))
+        # Strip any directory components so `model_name` can't be used to
+        # load a model file from outside the evaluation_function directory.
+        safe_model_name = os.path.basename(model_name)
+        model_path = os.path.join(model_dir, safe_model_name)
+        _model_cache[model_name] = YOLO(model_path)
+    return _model_cache[model_name]
+
+
+# Load the default model at import time so it overlaps the Lambda cold start
+# instead of counting against the first request's timeout.
+_load_model(DEFAULT_MODEL_NAME)
+
 
 def evaluation_function(
     response: Any,
@@ -36,7 +54,7 @@ def evaluation_function(
         )
 
     draw_images = params.get("draw_images", True)
-    model_name = params.get("model_name", "best.pt")
+    model_name = params.get("model_name", DEFAULT_MODEL_NAME)
     conf_threshold = params.get("conf_threshold", 0.5)
     # Optional array of class names to restrict detection to. Names are
     # matched against the model's own class names (model.names),
@@ -45,18 +63,9 @@ def evaluation_function(
 
     model_load_start = time.time()
 
-    # Use a dict to cache models by name
-    if model_name not in _model_cache:
-        model_dir = os.path.dirname(os.path.abspath(__file__))
-        # Strip any directory components so `model_name` can't be used to
-        # load a model file from outside the evaluation_function directory.
-        safe_model_name = os.path.basename(model_name)
-        model_path = os.path.join(model_dir, safe_model_name)
-        _model_cache[model_name] = YOLO(model_path)
+    model = _load_model(model_name)
 
     model_load_time = time.time() - model_load_start
-
-    model = _model_cache[model_name]
 
     # Resolve `allowed_classes` names to the class indices YOLO expects.
     # Unmatched names are kept aside so they can be surfaced in debug
@@ -248,10 +257,10 @@ def evaluation_function(
                 {"annotated": annotated, "detections": detections, "load_error": None}
             )
 
-        avg_load_time = np.mean(load_times) if load_times else 0.0
-        avg_prediction_time = np.mean(prediction_times) if prediction_times else 0.0
-        avg_process_time = np.mean(process_times) if process_times else 0.0
-        avg_draw_time = np.mean(draw_times) if draw_times else 0.0
+        avg_load_time = sum(load_times) / len(load_times) if load_times else 0.0
+        avg_prediction_time = sum(prediction_times) / len(prediction_times) if prediction_times else 0.0
+        avg_process_time = sum(process_times) / len(process_times) if process_times else 0.0
+        avg_draw_time = sum(draw_times) / len(draw_times) if draw_times else 0.0
 
         return (
             per_image,
@@ -309,7 +318,7 @@ def evaluation_function(
             append_feedback(f"Separator [{idx}]", " \n\n---\n\n")
             upload_times.append(0.0)
 
-    avg_upload_time = np.mean(upload_times) if upload_times else 0.0
+    avg_upload_time = sum(upload_times) / len(upload_times) if upload_times else 0.0
 
     feedback_time = time.time() - feedback_start
 

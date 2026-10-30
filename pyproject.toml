@@ -23,10 +23,26 @@ pillow = "^12.1.0"
 # can leave a corrupted cv2 binary after a parallel install. The Dockerfile
 # installs the system libraries opencv-python needs instead.
 opencv-python = "^4.12.0.88"
+# CPU-only builds: Lambda has no GPU, and the default CUDA build pulls in
+# several GB of nvidia-* libraries that make the cold start far too slow.
+# The CPU index has no macOS wheels, so other platforms keep using PyPI
+# (whose macOS builds are CPU/MPS only anyway).
+torch = [
+    { version = ">=2.7", source = "pytorch-cpu", markers = "sys_platform == 'linux'" },
+    { version = ">=2.7", source = "pypi", markers = "sys_platform != 'linux'" },
+]
 # torchvision <= 0.12 declares an unpinned torch dependency, so without a
 # lower bound the resolver pairs a current torch with an incompatible
 # torchvision. Newer releases pin their matching torch version.
-torchvision = ">=0.22.1"
+torchvision = [
+    { version = ">=0.22.1", source = "pytorch-cpu", markers = "sys_platform == 'linux'" },
+    { version = ">=0.22.1", source = "pypi", markers = "sys_platform != 'linux'" },
+]
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
