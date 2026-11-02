@@ -16,16 +16,12 @@ import time
 _model_cache = {}
 
 DEFAULT_MODEL_NAME = "best.pt"
+MODEL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _load_model(model_name):
     if model_name not in _model_cache:
-        model_dir = os.path.dirname(os.path.abspath(__file__))
-        # Strip any directory components so `model_name` can't be used to
-        # load a model file from outside the evaluation_function directory.
-        safe_model_name = os.path.basename(model_name)
-        model_path = os.path.join(model_dir, safe_model_name)
-        _model_cache[model_name] = YOLO(model_path)
+        _model_cache[model_name] = YOLO(os.path.join(MODEL_DIR, model_name))
     return _model_cache[model_name]
 
 
@@ -57,34 +53,75 @@ def evaluation_function(
     model_name = params.get("model_name", DEFAULT_MODEL_NAME)
     conf_threshold = params.get("conf_threshold", 0.5)
     # Optional array of class names to restrict detection to. Names are
-    # matched against the model's own class names (model.names),
-    # case-sensitive but with surrounding whitespace ignored.
+    # matched against the model's own class names (model.names), ignoring
+    # case and surrounding whitespace. A single name is treated as a list of one.
     allowed_classes = params.get("allowed_classes", None)
+    if allowed_classes and not isinstance(allowed_classes, list):
+        allowed_classes = [allowed_classes]
+    # Optional class name that must be detected for the response to be correct.
+    target = params.get("target", None)
+
+    # Configuration problems shown at the top of the feedback.
+    warnings = []
 
     model_load_start = time.time()
 
-    model = _load_model(model_name)
+    # Strip any directory components so `model_name` can't be used to
+    # load a model file from outside the evaluation_function directory.
+    safe_model_name = os.path.basename(str(model_name))
+    if not safe_model_name.endswith(".pt") or not os.path.isfile(os.path.join(MODEL_DIR, safe_model_name)):
+        warnings.append(
+            f"Model `{model_name}` does not exist, so the default model "
+            f"`{DEFAULT_MODEL_NAME}` was used."
+        )
+        safe_model_name = DEFAULT_MODEL_NAME
+
+    model = _load_model(safe_model_name)
 
     model_load_time = time.time() - model_load_start
 
+    def normalize_class_name(name):
+        return str(name).strip().casefold()
+
+    name_to_idx = {normalize_class_name(name): idx for idx, name in model.names.items()}
+
     # Resolve `allowed_classes` names to the class indices YOLO expects.
-    # Unmatched names are kept aside so they can be surfaced in debug
-    # feedback instead of silently doing nothing.
+    # Unmatched names are kept aside so they can be reported in the feedback
+    # instead of silently doing nothing.
     class_indices = None
     unmatched_classes = []
     if allowed_classes:
-        name_to_idx = {name: idx for idx, name in model.names.items()}
         matched_indices = []
         for name in allowed_classes:
-            key = str(name).strip()
+            key = normalize_class_name(name)
             if key in name_to_idx:
                 matched_indices.append(name_to_idx[key])
             else:
                 unmatched_classes.append(name)
+                warnings.append(
+                    f"Class `{name}` in `allowed_classes` does not exist in model "
+                    f"`{safe_model_name}` and was ignored."
+                )
         # An empty list means "match no class" to YOLO, not "don't filter".
         # Only apply the filter if at least one name actually matched.
         if matched_indices:
             class_indices = matched_indices
+        else:
+            warnings.append("No class in `allowed_classes` is valid, so all classes were detected.")
+
+    target_name = None
+    if target:
+        target_idx = name_to_idx.get(normalize_class_name(target))
+        if target_idx is None:
+            warnings.append(
+                f"Target class `{target}` does not exist in model "
+                f"`{safe_model_name}`, so the response cannot be marked correct."
+            )
+        else:
+            target_name = model.names[target_idx]
+            # `allowed_classes` must not make the target impossible to find.
+            if class_indices is not None and target_idx not in class_indices:
+                class_indices.append(target_idx)
 
     feedback_items = []
 
@@ -96,6 +133,12 @@ def evaluation_function(
         markdown_title = f"\n\n## {title.strip()}\n"
         markdown_body = "\n\n" + text.strip() + "\n"
         feedback_items.append((markdown_title, markdown_body))
+
+    if warnings:
+        append_feedback(
+            "Warnings",
+            "\n\n".join(f"**Warning:** {warning}" for warning in warnings),
+        )
 
     def get_class_color(class_name):
         random.seed(hash(class_name) % 10000)
@@ -360,9 +403,16 @@ def evaluation_function(
             f"| **Total** | **{total_time:.3f}** |\n"
         )
 
-    # There is no grading yet: a response counts as correct as soon as the
-    # model detects anything in at least one of the submitted images.
-    is_correct = any(info["detections"] for info in per_image)
+    # With a target, the response is correct if that class is detected in at
+    # least one image. Without one, any detection in any image is enough.
+    if target:
+        is_correct = any(
+            det[5] == target_name
+            for info in per_image
+            for det in info["detections"]
+        )
+    else:
+        is_correct = any(info["detections"] for info in per_image)
 
     return Result(
         is_correct=is_correct,

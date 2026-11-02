@@ -1,238 +1,252 @@
-# Python Evaluation Function
+# EduVision Flow Vis
 
-This repository contains the boilerplate code needed to create a containerized evaluation function written in Python.
+A [Lambda Feedback](https://github.com/lambda-feedback) evaluation function that looks at photos uploaded by a student and lists the objects it recognises in them, such as the parts of a flow visualisation rig.
 
-## Deployment
-[![Create Release Request](https://img.shields.io/badge/Create%20Release%20Request-blue?style=for-the-badge)](https://github.com/lambda-feedback/{REPO_NAME_HERE}/issues/new?template=release-request.yml)
-To deploy to production, update the README button above to point to the correct repository.
+No computer vision knowledge is needed to use it. If you only want to set it up on a question, read [What this function does](#what-this-function-does), [Parameters](#parameters) and [Available classes](#available-classes).
 
-## Quickstart
+## What this function does
 
-This chapter helps you to quickly set up a new Python evaluation function using this template repository.
+1. A student uploads one or more photos as their answer.
+2. A trained object-detection model ([YOLO](https://docs.ultralytics.com/)) searches each photo for the objects it was trained to recognise.
+3. The student gets feedback for each photo:
+   - a numbered list of the objects found, most confident first
+   - a confidence score for each object, from `0` to `1`, where higher means the model is more sure
+   - a copy of the photo with a labelled box drawn around each object
 
-> [!NOTE]
-> After setting up the evaluation function, delete this chapter from the `README.md` file, and add your own documentation.
+Example of the feedback text for one photo:
 
-#### 1. Create a new repository
+```text
+Image rig.jpg
 
-- In GitHub, choose `Use this template` > `Create a new repository` in the repository toolbar.
+Detected objects: 2
 
-- Choose the owner, and pick a name for the new repository.
-
-  > [!IMPORTANT]
-  > If you want to deploy the evaluation function to Lambda Feedback, make sure to choose the Lambda Feedback organization as the owner.
-
-- Set the visibility to `Public` or `Private`.
-
-  > [!IMPORTANT]
-  > If you want to use GitHub [deployment protection rules](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules), make sure to set the visibility to `Public`.
-
-- Click on `Create repository`.
-
-#### 2. Clone the new repository
-
-Clone the new repository to your local machine using the following command:
-
-```bash
-git clone <repository-url>
+1. Main Section - confidence 0.88
+2. Pump - confidence 0.71
 ```
 
-#### 3. Configure the evaluation function
-
-When deploying to Lambda Feedback, set the evaluation function name in the `config.json` file. Read the [Deploy to Lambda Feedback](#deploy-to-lambda-feedback) section for more information.
-
-#### 4. Develop the evaluation function
-
-You're ready to start developing your evaluation function. Head over to the [Development](#development) section to learn more.
-
-#### 5. Update the README
-
-In the `README.md` file, change the title and description so it fits the purpose of your evaluation function.
-
-Also, don't forget to delete the Quickstart chapter from the `README.md` file after you've completed these steps.
-
-## Usage
-
-You can run the evaluation function either using [the pre-built Docker image](#run-the-docker-image) or build and run [the binary executable](#build-and-run-the-binary).
-
-### Run the Docker Image
-
-The pre-built Docker image comes with [Shimmy](https://github.com/lambda-feedback/shimmy) installed.
-
-> [!TIP]
-> Shimmy is a small application that listens for incoming HTTP requests, validates the incoming data and forwards it to the underlying evaluation function. Learn more about Shimmy in the [Documentation](https://github.com/lambda-feedback/shimmy).
-
-The pre-built Docker image is available on the GitHub Container Registry. You can run the image using the following command:
-
-```bash
-docker run -p 8080:8080 ghcr.io/lambda-feedback/evaluation-function-boilerplate-python:latest
-```
-
-### Run the Script
-
-You can choose between running the Python evaluation function itself, ore using Shimmy to run the function.
-
-**Raw Mode**
-
-Use the following command to run the evaluation function directly:
-
-```bash
-python -m evaluation_function.main
-```
-
-This will run the evaluation function using the input data from `request.json` and write the output to `response.json`.
-
-**Shimmy**
-
-To have a more user-friendly experience, you can use [Shimmy](https://github.com/lambda-feedback/shimmy) to run the evaluation function.
-
-To run the evaluation function using Shimmy, use the following command:
-
-```bash
-shimmy -c "python" -a "-m" -a "evaluation_function.main" -i ipc
-```
-
-## Development
-
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/)
-- [Python](https://www.python.org)
-
-### Repository Structure
-
-```bash
-evaluation_function/main.py             # evaluation function entrypoint
-evaluation_function/evaluation.py       # evaluation function implementation
-evaluation_function/evaluation_test.py  # evaluation function tests
-evaluation_function/preview.py          # evaluation function preview
-evaluation_function/preview_test.py     # evaluation function preview tests
-
-config.json                             # evaluation function deployment configuration file
-```
-
-### Development Workflow
-
-In its most basic form, the development workflow consists of writing the evaluation function in the `evaluation_function/evaluation.py` file and testing it locally. As long as the evaluation function adheres to the Evaluation Function API, a development workflow which incorporates using Shimmy is not necessary.
-
-Testing the evaluation function can be done by running the `dev.py` script using the Python interpreter like so:
-
-```bash
-python -m evaluation_function.dev <response> <answer>
-```
-
-> [!NOTE]
-> Specify the `response` and `answer` as command-line arguments.
-
-### Building the Docker Image
-
-To build the Docker image, run the following command:
-
-```bash
-docker build -t my-python-evaluation-function .
-```
-
-### Running the Docker Image
-
-To run the Docker image, use the following command:
-
-```bash
-docker run -it --rm -p 8080:8080 my-python-evaluation-function
-```
-
-This will start the evaluation function and expose it on port `8080`.
-
-## Deployment
-
-This section guides you through the deployment process of the evaluation function. If you want to deploy the evaluation function to Lambda Feedback, follow the steps in the [Lambda Feedback](#deploy-to-lambda-feedback) section. Otherwise, you can deploy the evaluation function to other platforms using the [Other Platforms](#deploy-to-other-platforms) section.
-
-### Deploy to Lambda Feedback
-
-Deploying the evaluation function to Lambda Feedback is simple and straightforward, as long as the repository is within the [Lambda Feedback organization](https://github.com/lambda-feedback).
-
-After configuring the repository, a [GitHub Actions workflow](.github/workflows/deploy.yml) will automatically build and deploy the evaluation function to Lambda Feedback as soon as changes are pushed to the main branch of the repository.
-
-**Configuration**
-
-The deployment configuration is stored in the `config.json` file. Choose a unique name for the evaluation function and set the `EvaluationFunctionName` field in [`config.json`](config.json).
+### How the answer is marked
 
 > [!IMPORTANT]
-> The evaluation function name must be unique within the Lambda Feedback organization, and must be in `lowerCamelCase`. You can find a example configuration below:
+> The answer set on the question is ignored. To require a specific object, use the `target` parameter. Without `target`, **any** detected object makes the response correct.
+
+| Situation | Marked as |
+|---|---|
+| `target` is set and that class is found in at least one photo | Correct |
+| `target` is set and that class is not found in any photo | Incorrect |
+| `target` is set to a class that does not exist in the model | Incorrect, with a warning |
+| No `target`, and at least one object found in at least one photo | Correct |
+| No `target`, and no objects found in any photo | Incorrect |
+| No photo submitted | Incorrect, with a message asking for a photo |
+| A photo cannot be opened | That photo gets a "Could not load image" message and counts as having no objects |
+
+### Accepted photos
+
+JPEG and PNG photos work, as do HEIC/HEIF photos, the iPhone default. Sideways phone photos are rotated upright automatically.
+
+## Parameters
+
+Parameters are optional settings that change how the function behaves. In Lambda Feedback, set them in the evaluation function parameters of the question's response area, written as JSON. Any parameter you leave out uses its default.
+
+| Parameter | Type | Default | What it does |
+|---|---|---|---|
+| `target` | text | none | The class that must be found for the response to be correct, for example `"Pump"`. Capital letters do not matter. See [How the answer is marked](#how-the-answer-is-marked). |
+| `model_name` | text | `"best.pt"` | Which trained model to use. If the file does not exist, `best.pt` is used and a warning is shown. See [Adding another model](#adding-another-model). |
+| `conf_threshold` | number from `0` to `1` | `0.5` | How sure the model must be before it reports an object. Lower it to find more objects, with more mistakes. Raise it to report fewer objects, with fewer mistakes. |
+| `allowed_classes` | list of text | none (all classes) | Only look for these classes. See [Filtering classes](#filtering-classes). |
+| `draw_images` | `true` or `false` | `true` | Whether to show the student a copy of each photo with boxes drawn on it. Set it to `false` for a text-only list. |
+| `debug` | `true` or `false` | `false` | Adds technical details to the feedback: class filter results, upload error details, the original photos and how long each step took. **For testing only: students can see this output.** |
+| `debug_response` | `true` or `false` | `false` | Adds the raw submitted data to the feedback. **For testing only: students can see this output.** |
+
+### Examples
+
+Use the default settings:
+
+```json
+{}
+```
+
+Report only objects the model is at least 70% sure about:
 
 ```json
 {
-  "EvaluationFunctionName": "compareStringsWithPython"
+  "conf_threshold": 0.7
 }
 ```
 
-### Deploy to other Platforms
+Look only for the pump and the lid, without drawing on the photos:
 
-If you want to deploy the evaluation function to other platforms, you can use the Docker image to deploy the evaluation function.
-
-Please refer to the deployment documentation of the platform you want to deploy the evaluation function to.
-
-If you need help with the deployment, feel free to reach out to the Lambda Feedback team by creating an issue in the template repository.
-
-## FAQ
-
-### Pull Changes from the Template Repository
-
-If you want to pull changes from the template repository to your repository, follow these steps:
-
-1. Add the template repository as a remote:
-
-```bash
-git remote add template https://github.com/lambda-feedback/evaluation-function-boilerplate-python.git
+```json
+{
+  "allowed_classes": ["Pump", "Lid"],
+  "draw_images": false
+}
 ```
 
-2. Fetch changes from all remotes:
+Require a pump in the photo, with technical details turned on while testing:
 
-```bash
-git fetch --all
+```json
+{
+  "target": "Pump",
+  "debug": true
+}
 ```
 
-3. Merge changes from the template repository:
+### Filtering classes
+
+Follow these rules when you use `allowed_classes`:
+
+- **Spelling matters, capital letters do not.** `Pump` and `pump` both work. Spaces before or after a name are ignored.
+- **Use names from the model you selected.** Each model has its own classes.
+
+A name that does not exist is ignored, and a warning naming it appears at the top of the feedback. If **no** name in the list exists, the filter is switched off, **all** classes are detected and another warning says so.
+
+`allowed_classes` also affects marking. Without `target`, a photo containing only objects outside your list has no detections, so the response can be marked incorrect. The `target` class is always detected, even if it is not in `allowed_classes`.
+
+### Warnings
+
+Warnings about incorrect parameters appear at the top of the feedback, so **students can see them too**. Test a question's parameters before releasing it to students.
+
+| Problem | What happens |
+|---|---|
+| `model_name` does not exist | `best.pt` is used instead |
+| A class in `allowed_classes` does not exist | That name is ignored |
+| No class in `allowed_classes` exists | All classes are detected |
+| `target` does not exist in the model | The response is marked incorrect |
+
+## Available classes
+
+The included model recognises the classes below, and only these. Names are listed as the model spells them.
+
+### `best.pt`: flow visualisation rig (default)
+
+Used when `model_name` is not set. It has 20 classes:
+
+| | | |
+|---|---|---|
+| `Bolts` | `Camber` | `Downstream End Cap` |
+| `Downstream Port Covers` | `Fin-Shaped Insert` | `Honeycomb` |
+| `Inlet Tube` | `Lid` | `Main Section` |
+| `Measuring Jug` | `Needle` | `O Ring` |
+| `Outlet Tube` | `Port Covers` | `Pump` |
+| `Syringe 1mL` | `Syringe 3mL` | `Towel` |
+| `Upstream End Cap` | `Water Container` | |
+
+### Listing classes yourself
+
+If a model file changes, these lists may go out of date. To print the classes a model really has, run this from the project folder after [installing the project](#install-the-project):
 
 ```bash
-git merge template/main --allow-unrelated-histories
+poetry run python -c "from ultralytics import YOLO; print(YOLO('evaluation_function/best.pt').names)"
 ```
 
-> [!WARNING]
-> Make sure to resolve any conflicts and keep the changes you want to keep.
+### Adding another model
 
-## Troubleshooting
+Put the trained YOLO `.pt` file in the `evaluation_function` folder, then set `model_name` to its file name. Only the file name is used, so models in other folders cannot be loaded. If the file does not exist, `best.pt` is used and a warning is shown.
 
-### Containerized Evaluation Function Fails to Start
+## Common problems
 
-If your evaluation function is working fine when run locally, but not when containerized, there is much more to consider. Here are some common issues and solution approaches:
+| What you see | Likely cause | What to do |
+|---|---|---|
+| "No objects detected" | The object is not in the selected model, `allowed_classes` excludes it, or the model is not sure enough | Check for warnings at the top of the feedback, then try a lower `conf_threshold` such as `0.3` |
+| Wrong objects are listed | `conf_threshold` is too low | Raise it, for example to `0.7` |
+| A correct-looking photo is marked incorrect | The `target` object was not found, or its confidence is below `conf_threshold` | Check the list of detected objects, then try a lower `conf_threshold` |
+| A warning at the top of the feedback | A parameter is incorrect | See [Warnings](#warnings) |
+| "Image upload failed" | Storage for annotated photos is not set up | See [Annotated image storage](#annotated-image-storage), or set `"draw_images": false`. The list of objects still works. |
 
-**Run-time dependencies**
+## Running it on your own computer
 
-Make sure that all run-time dependencies are installed in the Docker image.
+### Install the project
 
-- Python packages: Make sure to add the dependency to the `pyproject.toml` file, and run `poetry install` in the Dockerfile.
-- System packages: If you need to install system packages, add the installation command to the Dockerfile.
-- ML models: If your evaluation function depends on ML models, make sure to include them in the Docker image.
-- Data files: If your evaluation function depends on data files, make sure to include them in the Docker image.
-
-**Architecture**
-
-Some package may not be compatible with the architecture of the Docker image. Make sure to use the correct platform when building and running the Docker image.
-
-E.g. to build a Docker image for the `linux/x86_64` platform, use the following command:
+You need [Python](https://www.python.org) 3.11 or newer and [Poetry](https://python-poetry.org/docs/#installation), which installs everything else. From the project folder, run:
 
 ```bash
-docker build --platform=linux/x86_64 .
+poetry install
 ```
 
-**Verify Standalone Execution**
-
-If requests are timing out, it might be due to the evaluation function not being able to run. Make sure that the evaluation function can be run as a standalone script. This will help you to identify issues that are specific to the containerized environment.
-
-To run just the evaluation function as a standalone script, without using Shimmy, use the following command:
+### Run the tests
 
 ```bash
-docker run -it --rm my-python-evaluation-function python -m evaluation_function.main
+poetry run pytest
 ```
 
-If the command starts without any errors, the evaluation function is working correctly. If not, you will see the error message in the console.
+### Try it on your own photo
+
+Save this as `try_photo.py` in the project folder and change the photo path and parameters:
+
+```python
+from pathlib import Path
+
+from lf_toolkit.evaluation import Params
+
+from evaluation_function.evaluation import evaluation_function
+
+photo = Path("evaluation_function/evaluation_test.py.jpg").resolve()
+response = [{"name": photo.name, "url": f"file://{photo}"}]
+params = Params(draw_images=False, conf_threshold=0.5)
+
+result = evaluation_function(response, None, params).to_dict()
+
+print("Correct:", result["is_correct"])
+print(result["feedback"])
+```
+
+Then run it:
+
+```bash
+poetry run python try_photo.py
+```
+
+> [!NOTE]
+> `evaluation_function.dev` does not work with this function. It passes plain text as the response, and this function needs a list of images. Use the script above instead.
+
+### Annotated image storage
+
+Annotated photos are uploaded to cloud storage so that students can see them, which requires these environment variables. A local `.env` file also works, but never commit it. Without them, the upload fails and the student sees a message instead of the annotated photo.
+
+| Storage | Environment variables |
+|---|---|
+| Amazon S3 | `S3_BUCKET_URI`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN` and `AWS_REGION` (default `eu-west-2`) |
+| Google Cloud Storage | `GCS_BUCKET`, and optionally `GCS_PUBLIC_BASE_URL`. Requires the toolkit's optional `gcs` extra. |
+
+`IMAGE_UPLOAD_BACKEND` can be set to `s3` or `gcs` to choose one explicitly. Otherwise, setting `GCS_BUCKET` selects Google Cloud Storage and anything else uses S3.
+
+For local testing, `draw_images=False` avoids the upload.
+
+## Development
+
+### Repository structure
+
+```bash
+evaluation_function/main.py             # entry point that starts the function
+evaluation_function/evaluation.py       # detection and feedback logic
+evaluation_function/evaluation_test.py  # evaluation tests
+evaluation_function/preview.py          # preview (empty, because the response is an image)
+evaluation_function/preview_test.py     # preview tests
+evaluation_function/best.pt             # default model
+
+config.json                             # deployment configuration
+```
+
+### Build and run the Docker image
+
+```bash
+docker build -t eduvision-flow-vis .
+docker run -it --rm -p 8080:8080 eduvision-flow-vis
+```
+
+This starts the function and exposes it on port `8080`, using [Shimmy](https://github.com/lambda-feedback/shimmy) to handle HTTP requests.
+
+To check that the function starts on its own, without Shimmy:
+
+```bash
+docker run -it --rm eduvision-flow-vis python -m evaluation_function.main
+```
+
+## Deployment
+
+The function name is set by `EvaluationFunctionName` in [`config.json`](config.json) and must be unique within Lambda Feedback.
+
+- **Staging:** every push to `main` runs the [staging workflow](.github/workflows/staging-deploy.yml).
+- **Production:** [create a release request](https://github.com/lambda-feedback/eduVisionFlowVis/issues/new?template=release-request.yml). The release is made with the [production workflow](.github/workflows/production-deploy.yml).
+
+If the function works locally but not in Docker, check that new Python packages are in `pyproject.toml`, new system packages are in the `Dockerfile`, and model files are in `evaluation_function`.

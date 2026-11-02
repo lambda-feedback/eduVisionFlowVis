@@ -85,6 +85,20 @@ class TestEvaluationFunction(unittest.TestCase):
         self.assertFalse(result["is_correct"])
         self.assertIn("Could not load image", result["feedback"])
 
+    def test_non_image_file_reported(self):
+        # Pillow can't identify this file, which is the path where Ultralytics
+        # falls back to the HEIF plugin before giving up.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            text_path = os.path.join(tmp_dir, "notes.jpg")
+            with open(text_path, "w") as f:
+                f.write("not an image")
+            response = [{"name": "notes.jpg", "url": f"file://{text_path}"}]
+
+            result = evaluation_function(response, "test_answer", Params(draw_images=False)).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("Could not load image", result["feedback"])
+
     def test_no_response_returns_feedback_without_crashing(self):
         result = evaluation_function([], "test_answer", Params()).to_dict()
 
@@ -105,5 +119,75 @@ class TestEvaluationFunction(unittest.TestCase):
         # Only the Main Section is in the photo, so restricting to Pump finds nothing.
         self.assertFalse(result["is_correct"])
         self.assertIn("No objects detected", result["feedback"])
-        # Unmatched names must be surfaced in debug feedback so typos are easy to catch.
-        self.assertIn("not_a_real_class", result["feedback"])
+        # Unmatched names must be surfaced in the feedback so typos are easy to catch.
+        self.assertIn("**Warning:** Class `not_a_real_class`", result["feedback"])
+
+    def test_allowed_classes_is_case_insensitive(self):
+        params = Params(draw_images=False, allowed_classes=["  main section "])
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertIn("`Main Section`", result["feedback"])
+        self.assertNotIn("Warning", result["feedback"])
+
+    def test_allowed_classes_accepts_single_name(self):
+        # Restricting to Pump finds nothing, which proves the filter was applied.
+        params = Params(draw_images=False, allowed_classes="Pump")
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("No objects detected", result["feedback"])
+        self.assertNotIn("Warning", result["feedback"])
+
+    def test_allowed_classes_all_invalid_detects_everything_with_warning(self):
+        params = Params(draw_images=False, allowed_classes=["not_a_real_class"])
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertIn("`Main Section`", result["feedback"])
+        self.assertIn("all classes were detected", result["feedback"])
+
+    def test_invalid_model_name_falls_back_to_default_with_warning(self):
+        for model_name in ("missing.pt", "evaluation.py", "", 5):
+            with self.subTest(model_name=model_name):
+                params = Params(draw_images=False, model_name=model_name)
+
+                result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+                self.assertTrue(result["is_correct"])
+                self.assertIn("`Main Section`", result["feedback"])
+                self.assertIn("**Warning:** Model", result["feedback"])
+
+    def test_target_detected_is_correct(self):
+        params = Params(draw_images=False, target="main section")
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertNotIn("Warning", result["feedback"])
+
+    def test_target_not_detected_is_incorrect(self):
+        # The photo contains the Main Section, but not the required Pump.
+        params = Params(draw_images=False, target="Pump")
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("`Main Section`", result["feedback"])
+
+    def test_invalid_target_is_incorrect_with_warning(self):
+        params = Params(draw_images=False, target="not_a_real_class")
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("**Warning:** Target class `not_a_real_class`", result["feedback"])
+
+    def test_target_is_detected_even_if_not_in_allowed_classes(self):
+        params = Params(draw_images=False, target="Main Section", allowed_classes=["Pump"])
+
+        result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("`Main Section`", result["feedback"])

@@ -24,6 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
 
+# Stop Ultralytics from pip-installing missing packages at runtime; the
+# deployed filesystem is read-only, so every dependency comes from poetry.lock
+ENV YOLO_AUTOINSTALL="false"
+
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 # Copy the evaluation function to the app directory
