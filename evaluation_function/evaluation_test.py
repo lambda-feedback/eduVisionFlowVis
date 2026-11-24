@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from .evaluation import Params, evaluation_function
+from .evaluation import DEFAULT_MODEL_NAME, Params, _load_model, evaluation_function
 
 
 def local_image_response():
@@ -48,6 +48,10 @@ class TestEvaluationFunction(unittest.TestCase):
         # The test photo shows the flow channel's main section on its own.
         self.assertIn("**Detected objects:** 1", result["feedback"])
         self.assertIn("`Main Section`", result["feedback"])
+
+    def test_default_model_is_obb(self):
+        # The default model predicts oriented (rotated) boxes, read from `res.obb`.
+        self.assertEqual(_load_model(DEFAULT_MODEL_NAME).task, "obb")
 
     def test_annotated_image_is_upright(self):
         # The test photo is stored as 4032x3024 with an EXIF tag rotating it

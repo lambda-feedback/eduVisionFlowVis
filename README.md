@@ -11,7 +11,7 @@ No computer vision knowledge is needed to use it. If you only want to set it up 
 3. The student gets feedback for each photo:
    - a numbered list of the objects found, most confident first
    - a confidence score for each object, from `0` to `1`, where higher means the model is more sure
-   - a copy of the photo with a labelled box drawn around each object
+   - a copy of the photo with a labelled box drawn around each object, turned to follow the object when it lies at an angle
 
 Example of the feedback text for one photo:
 
@@ -119,7 +119,7 @@ The included model recognises the classes below, and only these. Names are liste
 
 ### `best.pt`: flow visualisation rig (default)
 
-Used when `model_name` is not set. It has 20 classes:
+Used when `model_name` is not set. It is a YOLO26m oriented-box (OBB) model, so its boxes rotate with the object. It has 20 classes:
 
 | | | |
 |---|---|---|
@@ -141,7 +141,7 @@ poetry run python -c "from ultralytics import YOLO; print(YOLO('evaluation_funct
 
 ### Adding another model
 
-Put the trained YOLO `.pt` file in the `evaluation_function` folder, then set `model_name` to its file name. Only the file name is used, so models in other folders cannot be loaded. If the file does not exist, `best.pt` is used and a warning is shown.
+Put the trained YOLO `.pt` file in the `evaluation_function` folder, then set `model_name` to its file name. Both oriented-box (OBB) and ordinary detection models work: OBB boxes are drawn rotated, ordinary boxes upright. Only the file name is used, so models in other folders cannot be loaded. If the file does not exist, `best.pt` is used and a warning is shown.
 
 ## Common problems
 

@@ -165,15 +165,17 @@ def evaluation_function(
         base_font_scale = max(0.4, short_side / 900)
         box_thickness = max(2, round(short_side / 400))
 
-        for det in detections:
+        for corners, conf, cls in detections:
 
-            x1, y1, x2, y2, conf, cls = det
-            x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
+            # Oriented boxes are drawn as their 4-corner polygon; for an
+            # axis-aligned box the polygon is just the rectangle.
+            points = np.round(np.array(corners)).astype(np.int32)
+            x1, y1 = int(points[:, 0].min()), int(points[:, 1].min())
 
             color = get_class_color(str(cls))
             color_bgr = (color[2], color[1], color[0])
 
-            cv2.rectangle(img_cv, (x1, y1), (x2, y2), color_bgr, box_thickness)
+            cv2.polylines(img_cv, [points.reshape(-1, 1, 2)], True, color_bgr, box_thickness, cv2.LINE_AA)
 
             label = f"{cls}: {conf:.2f}"
 
@@ -192,8 +194,9 @@ def evaluation_function(
             label_w = tw + 2 * pad
             label_h = th + baseline + 2 * pad
 
-            # Place the label just above the box; if that would go past the
-            # top of the image, put it just inside the top of the box instead.
+            # Place the label just above the box (above its highest corner for
+            # a rotated box); if that would go past the top of the image, put
+            # it just inside the top of the box instead.
             # Then slide it left if it would run off the right edge.
             label_x = max(0, min(x1, w - label_w))
             label_y = y1 - label_h if y1 - label_h >= 0 else max(0, y1)
@@ -270,20 +273,29 @@ def evaluation_function(
 
             process_start = time.time()
 
+            # Each detection is (corners, confidence, class name), where corners
+            # are the box's 4 (x, y) points in image pixels.
             detections = []
 
             for res in results:
 
-                for box in res.boxes:
-
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    conf = float(box.conf[0])
-                    cls = model.names[int(box.cls[0])]
-
-                    detections.append((x1, y1, x2, y2, conf, cls))
+                # OBB models (the default best.pt) return rotated boxes in
+                # `res.obb` and leave `res.boxes` empty; detect models return
+                # axis-aligned boxes in `res.boxes`.
+                if res.obb is not None:
+                    for corners, conf, cls_idx in zip(
+                        res.obb.xyxyxyxy.tolist(), res.obb.conf.tolist(), res.obb.cls.tolist()
+                    ):
+                        detections.append((corners, float(conf), model.names[int(cls_idx)]))
+                elif res.boxes is not None:
+                    for (x1, y1, x2, y2), conf, cls_idx in zip(
+                        res.boxes.xyxy.tolist(), res.boxes.conf.tolist(), res.boxes.cls.tolist()
+                    ):
+                        corners = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+                        detections.append((corners, float(conf), model.names[int(cls_idx)]))
 
             # Most confident detection first, so the feedback list reads top-down.
-            detections.sort(key=lambda d: d[4], reverse=True)
+            detections.sort(key=lambda d: d[1], reverse=True)
 
             process_times.append(time.time() - process_start)
 
@@ -337,7 +349,7 @@ def evaluation_function(
         else:
             lines = [
                 f"{n}. `{cls}` - confidence `{conf:.2f}`"
-                for n, (_, _, _, _, conf, cls) in enumerate(detections, start=1)
+                for n, (_, conf, cls) in enumerate(detections, start=1)
             ]
             text = f"**Detected objects:** {len(detections)}\n\n" + "\n".join(lines)
         append_feedback(
@@ -407,7 +419,7 @@ def evaluation_function(
     # least one image. Without one, any detection in any image is enough.
     if target:
         is_correct = any(
-            det[5] == target_name
+            det[2] == target_name
             for info in per_image
             for det in info["detections"]
         )
