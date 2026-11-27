@@ -420,15 +420,11 @@ def evaluation_function(
             heartbeat_problem = f"Its first update could not be uploaded{detail}"
 
         if heartbeat:
-            if heartbeat.duration_seconds is None:
-                how_long = "with no time limit, for as long as its process runs"
-            else:
-                how_long = f"for up to {heartbeat.duration_seconds:g} s"
             append_feedback(
                 "Background Heartbeat",
                 f"### Background heartbeat\n\n"
                 f"A background thread uploads how long it has been running every "
-                f"{heartbeat.interval:g} s, {how_long}: "
+                f"{heartbeat.interval:g} s, for up to {heartbeat.duration_seconds:g} s: "
                 f"[heartbeat file]({heartbeat.url})\n\n"
                 f"File name: `{heartbeat_name}`\n\n---\n\n",
             )

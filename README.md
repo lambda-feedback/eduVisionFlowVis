@@ -55,7 +55,7 @@ Parameters are optional settings that change how the function behaves. In Lambda
 | `allowed_classes` | list of text | none (all classes) | Only look for these classes. See [Filtering classes](#filtering-classes). |
 | `draw_images` | `true` or `false` | `true` | Whether to show the student a copy of each photo with boxes drawn on it. Set it to `false` for a text-only list. |
 | `html_report` | `true` or `false` | `false` | Uploads an interactive web page reporting this evaluation and adds a link to it at the end of the feedback. See [HTML report](#html-report). **For testing only: students can open the report.** |
-| `heartbeat_seconds` | `true`, or a number of seconds | none (off) | Experiment: starts a background thread that keeps uploading how long it has been running, every 10 seconds. With `true` it has no time limit, otherwise it stops after this many seconds. See [Background heartbeat](#background-heartbeat). **For testing only.** |
+| `heartbeat_seconds` | `true`, or a number of seconds | none (off) | Experiment: starts a background thread that keeps uploading how long it has been running, every 10 seconds, and stops after this many seconds (at most 3600, one hour). `true` means 3600. See [Background heartbeat](#background-heartbeat). **For testing only.** |
 | `debug` | `true` or `false` | `false` | Adds technical details to the feedback: class filter results, upload error details, the original photos and how long each step took. **For testing only: students can see this output.** |
 | `debug_response` | `true` or `false` | `false` | Adds the raw submitted data to the feedback. **For testing only: students can see this output.** |
 
@@ -144,13 +144,27 @@ eduvision/reports/eduvision-report-20261127-184208-5d4af96e-heartbeat.json
 
 The feedback links to the file. With `html_report` on as well, the report has a **Background thread** section that reads the file every 5 seconds and shows how long the thread has run, how long ago it last wrote, its log, and the file's name.
 
-> [!NOTE]
-> On AWS Lambda, expect the thread to stop as soon as the function returns. Lambda freezes the whole environment once the response is sent, and the thread only continues if another request reaches the same instance. Its next log line then says how long it was paused. When AWS shuts the instance down, the thread ends without a last update. The report shows a frozen or ended thread as **Not updating**.
+#### Keeping the instance awake on AWS Lambda
 
-- With `true`, the thread has no time limit and runs for as long as its process does. With a number, it stops after that many seconds, and never sooner than 10 seconds.
+Lambda normally freezes the instance as soon as the response is sent, which would pause the thread. To prevent that, the Docker image includes a small Lambda extension, [`keepalive_extension.py`](evaluation_function/keepalive_extension.py). Lambda does not freeze an instance until every extension says it is done, but it sends the response to the student straight away. So while a heartbeat runs, the extension waits before saying it is done, and the instance stays awake.
+
+1. The heartbeat writes the time it wants to run until to a file in `/tmp`.
+2. The extension learns from Lambda's Telemetry API when the function has answered the request.
+3. If that file asks for more time, the extension keeps the instance awake until then. Requests without a heartbeat are released at once.
+
+> [!IMPORTANT]
+> The extension can keep the instance awake only until the function's timeout for the current request, at most 15 minutes, and it lets go 3 seconds before. Lambda's timeout for this function is set by the platform. After that, the instance is frozen and the thread pauses. If another request reaches the same instance while the heartbeat has time left, the extension keeps the instance awake again and the thread carries on. Its log then says how long it was paused. When AWS shuts the instance down, the thread ends without a last update. The report shows a paused or ended thread as **Not updating**.
+
+While the extension keeps an instance awake, that instance cannot take other requests. Lambda sends them to other instances, which may need a cold start, and AWS bills for the time the instance is kept awake.
+
+If the extension cannot get telemetry from Lambda, it never keeps the instance awake, and the function behaves as if the extension were not there.
+
+#### Limits
+
+- The thread stops after `heartbeat_seconds`, from 10 seconds to 3600 seconds (one hour). `true` means 3600 seconds.
 - At most 3 heartbeats run at once in one process. Starting another stops the oldest, which writes a last update saying so. The report then shows it as **Stopped**.
 - Each heartbeat uploads a file every 10 seconds, so leave it off outside tests.
-- The thread writes its log lines to standard error, which ends up in the function's logs (CloudWatch on AWS).
+- The thread and the extension write their log lines to the function's logs (CloudWatch on AWS), starting with `[heartbeat` and `[eduvision-keepalive]`.
 
 ## Available classes
 
@@ -262,6 +276,7 @@ evaluation_function/evaluation.py       # detection and feedback logic
 evaluation_function/evaluation_test.py  # evaluation tests
 evaluation_function/file_upload.py      # uploads any file under a chosen name
 evaluation_function/heartbeat.py        # background thread for the heartbeat_seconds experiment
+evaluation_function/keepalive_extension.py # Lambda extension that keeps the instance awake for it
 evaluation_function/report.py           # builds the HTML report
 evaluation_function/report_template.html # HTML report page: layout, CSS and JavaScript
 evaluation_function/preview.py          # preview (empty, because the response is an image)

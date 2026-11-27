@@ -1,12 +1,14 @@
 import io
 import json
-import math
+import os
+import tempfile
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
 from . import heartbeat
+from . import keepalive_extension as keepalive
 from .heartbeat import HeartbeatError, heartbeat_duration, start_heartbeat
 
 
@@ -45,12 +47,12 @@ class TestHeartbeatDuration(unittest.TestCase):
                 self.assertIsNone(heartbeat_duration(value))
 
     def test_on_values(self):
-        self.assertEqual(heartbeat_duration(True), math.inf)
+        self.assertEqual(heartbeat_duration(True), 3600)
         self.assertEqual(heartbeat_duration(60), 60)
         self.assertEqual(heartbeat_duration("30"), 30)
-        self.assertEqual(heartbeat_duration(86_400), 86_400)
-        # Never shorter than one interval.
+        # Kept between one interval and an hour.
         self.assertEqual(heartbeat_duration(1), heartbeat.INTERVAL_SECONDS)
+        self.assertEqual(heartbeat_duration(86_400), 3600)
 
     def test_invalid_value(self):
         with self.assertRaisesRegex(HeartbeatError, "number of seconds"):
@@ -59,6 +61,14 @@ class TestHeartbeatDuration(unittest.TestCase):
 
 @patch.object(heartbeat, "INTERVAL_SECONDS", 0.05)
 class TestHeartbeat(unittest.TestCase):
+    def setUp(self):
+        # Keep-alive files go to a fresh folder instead of the real /tmp.
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        env = patch.dict(os.environ, {"EDUVISION_KEEPALIVE_DIR": folder.name})
+        env.start()
+        self.addCleanup(env.stop)
+
     def test_keeps_overwriting_one_file_until_finished(self):
         storage = FakeStorage()
 
@@ -77,10 +87,10 @@ class TestHeartbeat(unittest.TestCase):
         self.assertIn("finished", states[-1]["log"][-1])
         self.assertGreaterEqual(states[-1]["elapsed_seconds"], 0.2)
 
-    def test_unlimited_runs_until_stopped(self):
+    def test_runs_until_stopped(self):
         storage = FakeStorage()
 
-        hb = start_heartbeat("hb.json", math.inf, storage.upload, "f")
+        hb = start_heartbeat("hb.json", 60, storage.upload, "f")
         self.assertTrue(storage.wait_for(5))
         self.assertTrue(hb.thread.is_alive())
         hb.stop("by the test")
@@ -90,8 +100,7 @@ class TestHeartbeat(unittest.TestCase):
         last = storage.states()[-1]
         self.assertEqual(last["status"], "stopped")
         self.assertEqual(last["stop_reason"], "by the test")
-        # JSON has no Infinity, so "no limit" is written as null.
-        self.assertIsNone(last["duration_seconds"])
+        self.assertEqual(last["duration_seconds"], 60)
         self.assertNotIn(hb, heartbeat._active)
 
     def test_reports_a_pause(self):
@@ -108,8 +117,8 @@ class TestHeartbeat(unittest.TestCase):
         storage = FakeStorage()
 
         with patch.object(heartbeat, "MAX_RUNNING", 1):
-            first = start_heartbeat("first.json", math.inf, storage.upload, "f")
-            second = start_heartbeat("second.json", math.inf, storage.upload, "f")
+            first = start_heartbeat("first.json", 60, storage.upload, "f")
+            second = start_heartbeat("second.json", 60, storage.upload, "f")
             first.thread.join(timeout=5)
 
         self.assertFalse(first.thread.is_alive())
@@ -130,6 +139,32 @@ class TestHeartbeat(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no bucket"):
             start_heartbeat("hb.json", 1, failing_upload, "f")
         self.assertEqual(heartbeat._active, active_before)
+
+    def test_asks_the_extension_to_keep_the_instance_awake(self):
+        storage = FakeStorage()
+
+        hb = start_heartbeat("hb.json", 60, storage.upload, "f")
+        request = keepalive.read_json(keepalive.keepalive_file())
+        self.assertAlmostEqual(request["until"], hb.started_at + 60, places=3)
+        self.assertEqual(request["pid"], os.getpid())
+        self.assertIsNotNone(keepalive.requested_until())
+
+        hb.stop("by the test")
+        hb.thread.join(timeout=5)
+        # Nothing is running any more, so nothing needs keeping awake.
+        self.assertFalse(os.path.exists(keepalive.keepalive_file()))
+
+    def test_reports_when_the_extension_keeps_the_instance_awake(self):
+        storage = FakeStorage()
+        holding_until = time.time() + 120
+        keepalive.write_json_atomic(keepalive.status_file(), {"holding_until": holding_until})
+
+        hb = start_heartbeat("hb.json", 0.1, storage.upload, "f")
+        hb.thread.join(timeout=5)
+
+        last = storage.states()[-1]
+        self.assertEqual(last["kept_awake_until"], heartbeat._iso(holding_until))
+        self.assertTrue(any("keep-alive extension keeps the instance awake until" in line for line in last["log"]))
 
     def test_logs_to_stderr_not_stdout(self):
         # With the stdio transport, stdout carries the worker's messages.

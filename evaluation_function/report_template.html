@@ -674,13 +674,18 @@
       } else if (ago > interval * 2.5) {
         setStatus("Not updating", "warn");
         note = `No update for ${fmtDuration(ago)}, although the thread should write one every ${fmtDuration(interval)}. ` +
-          "On AWS Lambda the thread is frozen once the evaluation returns, and only continues if another request reaches the same instance. " +
-          "If AWS has shut that instance down, the thread is gone and no further update will come.";
+          "On AWS Lambda the instance is frozen once the evaluation has answered and the keep-alive extension lets go, " +
+          "which it does at the function's time limit at the latest. The thread continues if another request reaches the same instance. " +
+          "If AWS has shut that instance down, no further update will come.";
       } else {
         setStatus("Running", "good");
         note = duration == null
           ? `The thread writes an update every ${fmtDuration(interval)} and has no time limit, so it runs for as long as its process does.`
           : `The thread writes an update every ${fmtDuration(interval)}, for up to ${fmtDuration(duration)}.`;
+        const keptUntil = last.kept_awake_until ? new Date(last.kept_awake_until) : null;
+        if (keptUntil && !isNaN(keptUntil)) {
+          note += ` The keep-alive extension keeps the instance awake until ${keptUntil.toLocaleTimeString("en-GB")}.`;
+        }
       }
       if (readError) note += ` The last read failed (${readError}), so this may be out of date.`;
       noteEl.textContent = note;

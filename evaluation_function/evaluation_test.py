@@ -1,4 +1,3 @@
-import math
 import os
 import tempfile
 import unittest
@@ -266,7 +265,7 @@ class TestEvaluationFunction(unittest.TestCase):
         def fake_start_heartbeat(filename, duration, upload, folder):
             started.append({"filename": filename, "duration": duration, "folder": folder})
             return SimpleNamespace(url=f"https://example.com/{folder}/{filename}", filename=filename, interval=10,
-                                   duration_seconds=None if math.isinf(duration) else duration)
+                                   duration_seconds=duration)
 
         params = Params(draw_images=False, html_report=True, heartbeat_seconds=heartbeat_seconds)
         with patch("evaluation_function.evaluation.upload_file", storage.upload), \
@@ -291,12 +290,12 @@ class TestEvaluationFunction(unittest.TestCase):
         self.assertEqual(data["heartbeat"]["duration_seconds"], 60)
         self.assertIsNone(data["heartbeat_problem"])
 
-    def test_heartbeat_true_has_no_time_limit(self):
+    def test_heartbeat_true_runs_for_the_maximum(self):
         result, storage, started = self.run_with_fake_heartbeat(True)
 
-        self.assertEqual(started[0]["duration"], math.inf)
-        self.assertIn("with no time limit", result["feedback"])
-        self.assertIsNone(storage.report_data()["heartbeat"]["duration_seconds"])
+        self.assertEqual(started[0]["duration"], 3600)
+        self.assertIn("for up to 3600 s", result["feedback"])
+        self.assertEqual(storage.report_data()["heartbeat"]["duration_seconds"], 3600)
 
     def test_heartbeat_that_cannot_start_is_reported(self):
         storage = FakeReportStorage()

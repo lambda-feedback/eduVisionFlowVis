@@ -33,6 +33,18 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 # Copy the evaluation function to the app directory
 COPY evaluation_function ./evaluation_function
 
+# Lambda extension that keeps the instance awake after the response while a
+# background heartbeat asks for it (see evaluation_function/keepalive_extension.py).
+# Lambda starts every executable in /opt/extensions, and the file name is the
+# extension's name. The launcher is written here, not copied, so it always has
+# Unix line endings and the absolute path of this image's Python. -I keeps the
+# launcher's Python isolated from PYTHON* settings such as PYTHONPROFILEIMPORTTIME.
+COPY evaluation_function/keepalive_extension.py /opt/eduvision-keepalive/keepalive_extension.py
+RUN mkdir -p /opt/extensions \
+    && printf '#!/bin/sh\nexec %s -I -u /opt/eduvision-keepalive/keepalive_extension.py\n' "$(command -v python3)" \
+       > /opt/extensions/eduvision-keepalive \
+    && chmod +x /opt/extensions/eduvision-keepalive
+
 # Precompile python files for faster startup. Runs after the COPY so the
 # function's own code is included: Lambda's filesystem is read-only, so
 # anything not compiled here is recompiled on every cold start.
