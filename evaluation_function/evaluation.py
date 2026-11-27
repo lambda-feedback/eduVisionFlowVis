@@ -415,18 +415,20 @@ def evaluation_function(
         heartbeat_name = report_name[:-len(".html")] + "-heartbeat.json"
         try:
             heartbeat = start_heartbeat(heartbeat_name, heartbeat_seconds, upload_file, REPORT_FOLDER)
-        except HeartbeatError as e:
-            heartbeat_problem = str(e)
         except Exception as e:
             detail = f": {e}" if params.get('debug', False) else "."
-            heartbeat_problem = f"Its file could not be uploaded{detail}"
+            heartbeat_problem = f"Its first update could not be uploaded{detail}"
 
         if heartbeat:
+            if heartbeat.duration_seconds is None:
+                how_long = "with no time limit, for as long as its process runs"
+            else:
+                how_long = f"for up to {heartbeat.duration_seconds:g} s"
             append_feedback(
                 "Background Heartbeat",
                 f"### Background heartbeat\n\n"
                 f"A background thread uploads how long it has been running every "
-                f"{heartbeat.interval:g} s, for up to {heartbeat.duration:g} s: "
+                f"{heartbeat.interval:g} s, {how_long}: "
                 f"[heartbeat file]({heartbeat.url})\n\n"
                 f"File name: `{heartbeat_name}`\n\n---\n\n",
             )
@@ -500,7 +502,7 @@ def evaluation_function(
                 "url": heartbeat.url,
                 "file_name": heartbeat.filename,
                 "interval_seconds": heartbeat.interval,
-                "duration_seconds": heartbeat.duration,
+                "duration_seconds": heartbeat.duration_seconds,
             } if heartbeat else None,
             "heartbeat_problem": heartbeat_problem,
         }

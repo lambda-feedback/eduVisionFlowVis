@@ -189,7 +189,8 @@
   .hb-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px 24px; }
   .hb-stats .label { font-size: 13px; color: var(--muted); }
   .hb-stats .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 16px 0 14px; }
+  #hb-body { margin-bottom: 14px; }
+  .progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 16px; }
   .progress span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .4s; }
   .hb-note { margin: 0 0 12px; font-size: 14px; }
   .hb-note:empty { display: none; }
@@ -644,7 +645,9 @@
     $("hb-file").textContent = hb.file_name;
     $("hb-link").href = hb.url;
     const interval = Number(hb.interval_seconds) || 10;
-    const duration = Number(hb.duration_seconds) || 0;
+    // null means no time limit: the thread runs for as long as its process.
+    const duration = hb.duration_seconds == null ? null : Number(hb.duration_seconds);
+    if (duration == null) $("hb-progress").parentElement.hidden = true;
     let last = null, readError = null, timer = null;
 
     function render() {
@@ -659,19 +662,25 @@
       $("hb-elapsed").textContent = fmtDuration(last.elapsed_seconds);
       $("hb-ago").textContent = fmtDuration(ago) + " ago";
       $("hb-beats").textContent = String(last.beats);
-      $("hb-progress").style.width = (duration ? Math.min(100, (last.elapsed_seconds / duration) * 100) : 0).toFixed(1) + "%";
+      if (duration) $("hb-progress").style.width = Math.min(100, (last.elapsed_seconds / duration) * 100).toFixed(1) + "%";
 
       let note;
       if (last.status === "finished") {
         setStatus("Finished", "");
         note = `The thread ran for its full ${fmtDuration(duration)} and stopped.`;
+      } else if (last.status === "stopped") {
+        setStatus("Stopped", "");
+        note = `The thread was stopped ${last.stop_reason || ""}.`;
       } else if (ago > interval * 2.5) {
         setStatus("Not updating", "warn");
         note = `No update for ${fmtDuration(ago)}, although the thread should write one every ${fmtDuration(interval)}. ` +
-          "On AWS Lambda the thread is frozen once the evaluation returns, and only continues if another request reaches the same instance.";
+          "On AWS Lambda the thread is frozen once the evaluation returns, and only continues if another request reaches the same instance. " +
+          "If AWS has shut that instance down, the thread is gone and no further update will come.";
       } else {
         setStatus("Running", "good");
-        note = `The thread writes an update every ${fmtDuration(interval)}, for up to ${fmtDuration(duration)}.`;
+        note = duration == null
+          ? `The thread writes an update every ${fmtDuration(interval)} and has no time limit, so it runs for as long as its process does.`
+          : `The thread writes an update every ${fmtDuration(interval)}, for up to ${fmtDuration(duration)}.`;
       }
       if (readError) note += ` The last read failed (${readError}), so this may be out of date.`;
       noteEl.textContent = note;
@@ -691,7 +700,7 @@
         readError = (e && e.message) || String(e);
       }
       render();
-      if (last && last.status === "finished") clearInterval(timer);
+      if (last && (last.status === "finished" || last.status === "stopped")) clearInterval(timer);
     }
 
     poll();

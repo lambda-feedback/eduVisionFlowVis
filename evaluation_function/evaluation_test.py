@@ -1,3 +1,4 @@
+import math
 import os
 import tempfile
 import unittest
@@ -8,7 +9,6 @@ from PIL import Image
 
 from .evaluation import DEFAULT_MODEL_NAME, Params, _load_model, evaluation_function
 from .file_upload import FileUploadError
-from .heartbeat import HeartbeatError
 from .report_test import embedded_data
 
 
@@ -258,19 +258,24 @@ class TestEvaluationFunction(unittest.TestCase):
         # Storage error details are only shown with `debug`.
         self.assertNotIn("bucket says no", result["feedback"])
 
-    def test_heartbeat_started_and_shown_in_report(self):
+    def run_with_fake_heartbeat(self, heartbeat_seconds):
+        """Evaluate with html_report and heartbeat_seconds; return (result, storage, start calls)."""
         storage = FakeReportStorage()
         started = []
 
         def fake_start_heartbeat(filename, duration, upload, folder):
             started.append({"filename": filename, "duration": duration, "folder": folder})
-            return SimpleNamespace(url=f"https://example.com/{folder}/{filename}", filename=filename,
-                                   interval=10, duration=duration)
+            return SimpleNamespace(url=f"https://example.com/{folder}/{filename}", filename=filename, interval=10,
+                                   duration_seconds=None if math.isinf(duration) else duration)
 
-        params = Params(draw_images=False, html_report=True, heartbeat_seconds=60)
+        params = Params(draw_images=False, html_report=True, heartbeat_seconds=heartbeat_seconds)
         with patch("evaluation_function.evaluation.upload_file", storage.upload), \
                 patch("evaluation_function.evaluation.start_heartbeat", fake_start_heartbeat):
             result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+        return result, storage, started
+
+    def test_heartbeat_started_and_shown_in_report(self):
+        result, storage, started = self.run_with_fake_heartbeat(60)
 
         self.assertEqual(len(started), 1)
         report_name = storage.uploads[0]["filename"]
@@ -278,26 +283,37 @@ class TestEvaluationFunction(unittest.TestCase):
         self.assertEqual(started[0], {"filename": heartbeat_name, "duration": 60, "folder": "eduvision/reports"})
         self.assertIn(f"https://example.com/eduvision/reports/{heartbeat_name}", result["feedback"])
         self.assertIn(heartbeat_name, result["feedback"])
+        self.assertIn("for up to 60 s", result["feedback"])
 
         data = storage.report_data()
         self.assertEqual(data["heartbeat"]["file_name"], heartbeat_name)
         self.assertEqual(data["heartbeat"]["interval_seconds"], 10)
+        self.assertEqual(data["heartbeat"]["duration_seconds"], 60)
         self.assertIsNone(data["heartbeat_problem"])
+
+    def test_heartbeat_true_has_no_time_limit(self):
+        result, storage, started = self.run_with_fake_heartbeat(True)
+
+        self.assertEqual(started[0]["duration"], math.inf)
+        self.assertIn("with no time limit", result["feedback"])
+        self.assertIsNone(storage.report_data()["heartbeat"]["duration_seconds"])
 
     def test_heartbeat_that_cannot_start_is_reported(self):
         storage = FakeReportStorage()
-        refusing_start = MagicMock(side_effect=HeartbeatError("3 background heartbeats are already running."))
+        failing_start = MagicMock(side_effect=FileUploadError("bucket says no"))
 
         params = Params(draw_images=False, html_report=True, heartbeat_seconds=60)
         with patch("evaluation_function.evaluation.upload_file", storage.upload), \
-                patch("evaluation_function.evaluation.start_heartbeat", refusing_start):
+                patch("evaluation_function.evaluation.start_heartbeat", failing_start):
             result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
 
         self.assertTrue(result["is_correct"])
-        self.assertIn("Background heartbeat did not start. 3 background heartbeats", result["feedback"])
+        self.assertIn("Background heartbeat did not start. Its first update could not be uploaded.", result["feedback"])
+        # Storage error details are only shown with `debug`.
+        self.assertNotIn("bucket says no", result["feedback"])
         data = storage.report_data()
         self.assertIsNone(data["heartbeat"])
-        self.assertIn("already running", data["heartbeat_problem"])
+        self.assertIn("could not be uploaded", data["heartbeat_problem"])
 
     def test_invalid_heartbeat_seconds_warns(self):
         fake_start = MagicMock()
@@ -308,7 +324,7 @@ class TestEvaluationFunction(unittest.TestCase):
             ).to_dict()
 
         fake_start.assert_not_called()
-        self.assertIn("**Warning:** `heartbeat_seconds` must be a number", result["feedback"])
+        self.assertIn("**Warning:** `heartbeat_seconds` must be `true` or a number of seconds", result["feedback"])
 
     def test_target_is_detected_even_if_not_in_allowed_classes(self):
         params = Params(draw_images=False, target="Main Section", allowed_classes=["Pump"])

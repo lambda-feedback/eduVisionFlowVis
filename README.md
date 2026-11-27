@@ -55,7 +55,7 @@ Parameters are optional settings that change how the function behaves. In Lambda
 | `allowed_classes` | list of text | none (all classes) | Only look for these classes. See [Filtering classes](#filtering-classes). |
 | `draw_images` | `true` or `false` | `true` | Whether to show the student a copy of each photo with boxes drawn on it. Set it to `false` for a text-only list. |
 | `html_report` | `true` or `false` | `false` | Uploads an interactive web page reporting this evaluation and adds a link to it at the end of the feedback. See [HTML report](#html-report). **For testing only: students can open the report.** |
-| `heartbeat_seconds` | number of seconds, or `true` | none (off) | Experiment: starts a background thread that keeps uploading how long it has been running, every 10 seconds, for this many seconds. See [Background heartbeat](#background-heartbeat). **For testing only.** |
+| `heartbeat_seconds` | `true`, or a number of seconds | none (off) | Experiment: starts a background thread that keeps uploading how long it has been running, every 10 seconds. With `true` it has no time limit, otherwise it stops after this many seconds. See [Background heartbeat](#background-heartbeat). **For testing only.** |
 | `debug` | `true` or `false` | `false` | Adds technical details to the feedback: class filter results, upload error details, the original photos and how long each step took. **For testing only: students can see this output.** |
 | `debug_response` | `true` or `false` | `false` | Adds the raw submitted data to the feedback. **For testing only: students can see this output.** |
 
@@ -145,10 +145,10 @@ eduvision/reports/eduvision-report-20261127-184208-5d4af96e-heartbeat.json
 The feedback links to the file. With `html_report` on as well, the report has a **Background thread** section that reads the file every 5 seconds and shows how long the thread has run, how long ago it last wrote, its log, and the file's name.
 
 > [!NOTE]
-> On AWS Lambda, expect the thread to stop as soon as the function returns. Lambda freezes the whole environment once the response is sent, and the thread only continues if another request reaches the same instance. Its next log line then says how long it was paused. The report shows a frozen thread as **Not updating**.
+> On AWS Lambda, expect the thread to stop as soon as the function returns. Lambda freezes the whole environment once the response is sent, and the thread only continues if another request reaches the same instance. Its next log line then says how long it was paused. When AWS shuts the instance down, the thread ends without a last update. The report shows a frozen or ended thread as **Not updating**.
 
-- The thread runs for `heartbeat_seconds`, between 10 and 900 seconds. `true` means 120 seconds.
-- At most 3 heartbeats run at once in one process. A further one does not start, and the feedback says why.
+- With `true`, the thread has no time limit and runs for as long as its process does. With a number, it stops after that many seconds, and never sooner than 10 seconds.
+- At most 3 heartbeats run at once in one process. Starting another stops the oldest, which writes a last update saying so. The report then shows it as **Stopped**.
 - Each heartbeat uploads a file every 10 seconds, so leave it off outside tests.
 - The thread writes its log lines to standard error, which ends up in the function's logs (CloudWatch on AWS).
 
