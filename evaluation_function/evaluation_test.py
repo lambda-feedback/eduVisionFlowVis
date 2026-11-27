@@ -1,11 +1,13 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
 from .evaluation import DEFAULT_MODEL_NAME, Params, _load_model, evaluation_function
+from .file_upload import FileUploadError
+from .report_test import embedded_data
 
 
 def local_image_response():
@@ -187,6 +189,57 @@ class TestEvaluationFunction(unittest.TestCase):
 
         self.assertFalse(result["is_correct"])
         self.assertIn("**Warning:** Target class `not_a_real_class`", result["feedback"])
+
+    def test_html_report_uploaded_with_fixed_name(self):
+        uploads = []
+
+        def fake_upload_file(data, filename, mime_type, folder="eduvision"):
+            uploads.append({"data": data, "filename": filename, "mime_type": mime_type, "folder": folder})
+            return f"https://example.com/{folder}/{filename}"
+
+        params = Params(draw_images=False, html_report=True, target="Main Section")
+        with patch("evaluation_function.evaluation.upload_file", fake_upload_file):
+            result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertEqual(len(uploads), 1)
+        upload = uploads[0]
+        self.assertRegex(upload["filename"], r"^eduvision-report-\d{8}-\d{6}-[0-9a-f]{8}\.html$")
+        self.assertEqual(upload["folder"], "eduvision/reports")
+        self.assertEqual(upload["mime_type"], "text/html; charset=utf-8")
+        self.assertIn(f"https://example.com/eduvision/reports/{upload['filename']}", result["feedback"])
+        self.assertIn(upload["filename"], result["feedback"])
+
+        data = embedded_data(upload["data"].decode("utf-8"))
+        self.assertTrue(data["is_correct"])
+        self.assertEqual(data["file_name"], upload["filename"])
+        self.assertEqual(data["settings"]["target_class"], "Main Section")
+        image = data["images"][0]
+        # Sizes are those of the upright photo, the coordinate system of the boxes.
+        self.assertEqual((image["width"], image["height"]), (3024, 4032))
+        self.assertEqual(image["preview_kind"], "original")
+        self.assertEqual([d["class"] for d in image["detections"]], ["Main Section"])
+        self.assertEqual(len(image["detections"][0]["corners"]), 4)
+
+    def test_html_report_off_by_default(self):
+        fake_upload_file = MagicMock()
+
+        with patch("evaluation_function.evaluation.upload_file", fake_upload_file):
+            result = evaluation_function(local_image_response(), "test_answer", Params(draw_images=False)).to_dict()
+
+        fake_upload_file.assert_not_called()
+        self.assertNotIn("Evaluation report", result["feedback"])
+
+    def test_html_report_upload_failure_keeps_result(self):
+        failing_upload = MagicMock(side_effect=FileUploadError("bucket says no"))
+        params = Params(draw_images=False, html_report=True)
+
+        with patch("evaluation_function.evaluation.upload_file", failing_upload):
+            result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("Evaluation report upload failed", result["feedback"])
+        # Storage error details are only shown with `debug`.
+        self.assertNotIn("bucket says no", result["feedback"])
 
     def test_target_is_detected_even_if_not_in_allowed_classes(self):
         params = Params(draw_images=False, target="Main Section", allowed_classes=["Pump"])

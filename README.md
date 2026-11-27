@@ -54,6 +54,7 @@ Parameters are optional settings that change how the function behaves. In Lambda
 | `conf_threshold` | number from `0` to `1` | `0.5` | How sure the model must be before it reports an object. Lower it to find more objects, with more mistakes. Raise it to report fewer objects, with fewer mistakes. |
 | `allowed_classes` | list of text | none (all classes) | Only look for these classes. See [Filtering classes](#filtering-classes). |
 | `draw_images` | `true` or `false` | `true` | Whether to show the student a copy of each photo with boxes drawn on it. Set it to `false` for a text-only list. |
+| `html_report` | `true` or `false` | `false` | Uploads an interactive web page reporting this evaluation and adds a link to it at the end of the feedback. See [HTML report](#html-report). **For testing only: students can open the report.** |
 | `debug` | `true` or `false` | `false` | Adds technical details to the feedback: class filter results, upload error details, the original photos and how long each step took. **For testing only: students can see this output.** |
 | `debug_response` | `true` or `false` | `false` | Adds the raw submitted data to the feedback. **For testing only: students can see this output.** |
 
@@ -113,6 +114,25 @@ Warnings about incorrect parameters appear at the top of the feedback, so **stud
 | No class in `allowed_classes` exists | All classes are detected |
 | `target` does not exist in the model | The response is marked incorrect |
 
+### HTML report
+
+With `"html_report": true`, the function also builds a web page about the evaluation, uploads it to the same storage as the annotated photos and links to it at the end of the feedback.
+
+The report shows whether the response was marked correct and why, the settings, any warnings, each photo with its detected objects, and how long each step took. On the page you can hide classes, raise the minimum confidence, sort the detections, and point at a detection to highlight its box on the photo. The page is a single file with nothing else to install or host.
+
+Every report gets a file name in the same format:
+
+```text
+eduvision/reports/eduvision-report-<YYYYMMDD>-<HHMMSS>-<8 random characters>.html
+```
+
+The date and time are UTC, for example `eduvision-report-20261127-184208-5d4af96e.html`. The random part stops two evaluations in the same second from overwriting each other's report.
+
+> [!WARNING]
+> The link appears in the student's feedback, and anyone with the link can open the report. The report lists every setting, including `target`, so use it only while testing.
+
+If the upload fails, the feedback says "Evaluation report upload failed" and everything else is unchanged. With `debug` set to `true`, the storage error is shown as well.
+
 ## Available classes
 
 The included model recognises the classes below, and only these. Names are listed as the model spells them.
@@ -152,6 +172,7 @@ Put the trained YOLO `.pt` file in the `evaluation_function` folder, then set `m
 | A correct-looking photo is marked incorrect | The `target` object was not found, or its confidence is below `conf_threshold` | Check the list of detected objects, then try a lower `conf_threshold` |
 | A warning at the top of the feedback | A parameter is incorrect | See [Warnings](#warnings) |
 | "Image upload failed" | Storage for annotated photos is not set up | See [Annotated image storage](#annotated-image-storage), or set `"draw_images": false`. The list of objects still works. |
+| "Evaluation report upload failed" | Storage is not set up, or does not accept the HTML file | See [Annotated image storage](#annotated-image-storage), or remove `html_report`. |
 
 ## Running it on your own computer
 
@@ -201,7 +222,7 @@ poetry run python try_photo.py
 
 ### Annotated image storage
 
-Annotated photos are uploaded to cloud storage so that students can see them, which requires these environment variables. A local `.env` file also works, but never commit it. Without them, the upload fails and the student sees a message instead of the annotated photo.
+Annotated photos, and [HTML reports](#html-report) when `html_report` is on, are uploaded to cloud storage so that students can see them, which requires these environment variables. Uploaded files must be publicly readable. A local `.env` file also works, but never commit it. Without them, the upload fails and the student sees a message instead of the annotated photo.
 
 | Storage | Environment variables |
 |---|---|
@@ -220,6 +241,9 @@ For local testing, `draw_images=False` avoids the upload.
 evaluation_function/main.py             # entry point that starts the function
 evaluation_function/evaluation.py       # detection and feedback logic
 evaluation_function/evaluation_test.py  # evaluation tests
+evaluation_function/file_upload.py      # uploads any file under a chosen name
+evaluation_function/report.py           # builds the HTML report
+evaluation_function/report_template.html # HTML report page: layout, CSS and JavaScript
 evaluation_function/preview.py          # preview (empty, because the response is an image)
 evaluation_function/preview_test.py     # preview tests
 evaluation_function/best.pt             # default model

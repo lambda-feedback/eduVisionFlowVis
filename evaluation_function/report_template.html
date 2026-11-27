@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>EduVision evaluation report</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --border: #e2e5ea;
+    --text: #1b1f24;
+    --muted: #5d6673;
+    --accent: #2f6feb;
+    --good: #1a7f37;
+    --good-bg: #dcf5e3;
+    --bad: #c62828;
+    --bad-bg: #fde4e4;
+    --warn: #8a5d00;
+    --warn-bg: #fff4d6;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 2px 6px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1115;
+      --surface: #161a20;
+      --surface-2: #1d222a;
+      --border: #2a313b;
+      --text: #e6e9ee;
+      --muted: #9aa4b2;
+      --accent: #6ea0ff;
+      --good: #4ac26b;
+      --good-bg: rgba(74, 194, 107, .14);
+      --bad: #ff7676;
+      --bad-bg: rgba(255, 118, 118, .14);
+      --warn: #e3b341;
+      --warn-bg: rgba(227, 179, 65, .12);
+      --shadow: none;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 36px 20px 56px; }
+  h1, h2, h3 { margin: 0; line-height: 1.25; }
+  h2 { font-size: 17px; font-weight: 650; }
+  h3 { font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace; font-size: .9em; }
+  .muted { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Header */
+  .hero { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+  .eyebrow { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .hero h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
+  .hero p.reason { margin: 8px 0 0; color: var(--muted); max-width: 60ch; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 999px; font-weight: 650; font-size: 15px; white-space: nowrap;
+  }
+  .badge svg { width: 18px; height: 18px; }
+  .badge.good { color: var(--good); background: var(--good-bg); }
+  .badge.bad { color: var(--bad); background: var(--bad-bg); }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 28px; padding-bottom: 20px;
+    border-bottom: 1px solid var(--border); color: var(--muted); font-size: 13px;
+  }
+  .meta strong { color: var(--text); font-weight: 600; }
+  .meta code { color: var(--text); background: var(--surface-2); padding: 1px 6px; border-radius: 6px; }
+
+  /* Tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+  .tile .label { font-size: 13px; color: var(--muted); }
+  .tile .value { font-size: 28px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+
+  /* Cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow); }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+
+  .callout { border-radius: var(--radius); padding: 14px 18px; margin-bottom: 18px; background: var(--warn-bg); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+  .callout h2 { font-size: 15px; margin-bottom: 6px; }
+  .callout ul { margin: 0; padding-left: 20px; color: var(--text); }
+  .callout li + li { margin-top: 4px; }
+
+  .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 24px; margin: 0; }
+  .settings div { min-width: 0; }
+  .settings dt { font-size: 13px; color: var(--muted); }
+  .settings dd { margin: 2px 0 0; font-weight: 550; overflow-wrap: anywhere; }
+
+  /* Filters */
+  .slider { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  .slider input { width: 180px; accent-color: var(--accent); }
+  .slider output { min-width: 3.2em; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 8px;
+    border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: 13px; cursor: pointer; transition: opacity .15s, background .15s;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip:focus-visible, .sort:focus-visible, .copy:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip[aria-pressed="false"] { opacity: .45; }
+  .chip[aria-pressed="false"] .swatch { background: transparent !important; }
+  .chip .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .swatch { width: 12px; height: 12px; border-radius: 4px; flex: none; border: 2px solid var(--c); background: var(--c); }
+
+  /* Image cards */
+  .image-card { border-top: 1px solid var(--border); padding-top: 18px; margin-top: 18px; }
+  .image-card:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .image-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .image-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 760px) { .image-body { grid-template-columns: 1fr; } }
+  figure { margin: 0; }
+  .stage {
+    position: relative; width: 100%; overflow: hidden; border-radius: 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .stage img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .stage.no-image {
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .box {
+    fill: var(--c); fill-opacity: 0; stroke: var(--c); stroke-opacity: 0; stroke-width: 3;
+    vector-effect: non-scaling-stroke; stroke-linejoin: round; cursor: pointer;
+    transition: fill-opacity .15s, stroke-opacity .15s, opacity .15s;
+  }
+  .stage.drawn .box { stroke-opacity: 1; }
+  .box.is-active { fill-opacity: .28; stroke-opacity: 1; stroke-width: 5; }
+  .stage.has-active .box:not(.is-active) { opacity: .35; }
+  .box.is-hidden { display: none; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .error-box { padding: 14px 16px; border-radius: 10px; background: var(--bad-bg); color: var(--bad); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 10px 8px; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { padding-left: 4px; width: 2.5em; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr { cursor: default; transition: background .12s; }
+  tbody tr.is-active { background: var(--surface-2); }
+  .sort { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; border-radius: 4px; }
+  .sort::after { content: "↕"; opacity: .35; font-size: 11px; }
+  th[aria-sort="ascending"] .sort::after { content: "↑"; opacity: 1; }
+  th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
+  .cls { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+  .conf { display: flex; align-items: center; gap: 10px; }
+  .meter { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; min-width: 60px; }
+  .meter span { display: block; height: 100%; border-radius: inherit; background: var(--c); }
+  .conf .num { width: 2.6em; text-align: right; font-weight: 600; }
+  .empty { margin: 8px 0 0; color: var(--muted); font-style: italic; }
+
+  /* Timings */
+  .bars { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; gap: 10px 14px; align-items: center; }
+  .bars .bar { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .bars .bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+  .bars .label { font-size: 14px; }
+  .bars .val { font-size: 13px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .total { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 14px; display: flex; justify-content: space-between; }
+
+  details summary { cursor: pointer; font-weight: 650; }
+  details pre {
+    margin: 12px 0 0; max-height: 360px; overflow: auto; padding: 14px; border-radius: 10px;
+    background: var(--surface-2); font-size: 12px; line-height: 1.45;
+  }
+  .copy {
+    font: inherit; font-size: 13px; margin-top: 12px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">EduVision Flow Vis · Evaluation report</p>
+      <h1 id="verdict-title">Evaluation report</h1>
+      <p class="reason" id="verdict-reason"></p>
+    </div>
+    <span id="verdict-badge" class="badge"></span>
+  </header>
+
+  <div class="meta">
+    <span>Generated <strong id="generated-at"></strong></span>
+    <span>Report file <code id="file-name"></code></span>
+  </div>
+
+  <noscript><p class="callout">This report needs JavaScript to display its results.</p></noscript>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="callout" id="warnings" hidden>
+    <h2>Warnings</h2>
+    <ul id="warning-list"></ul>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Settings</h2></div>
+    <dl class="settings" id="settings"></dl>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Detections</h2>
+      <label class="slider">Minimum confidence
+        <input type="range" id="conf-slider" min="0" max="1" step="0.01">
+        <output id="conf-output" for="conf-slider"></output>
+      </label>
+    </div>
+    <div class="chips" id="class-chips" role="group" aria-label="Show or hide classes"></div>
+    <div id="images"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Timings</h2><span class="muted" style="font-size:13px">Average per photo, except model load</span></div>
+    <div class="bars" id="timings"></div>
+    <p class="total"><span>Total, excluding this report</span><strong class="num" id="total-time"></strong></p>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Raw report data</summary>
+      <pre id="raw-json"></pre>
+      <button type="button" class="copy" id="copy-json">Copy JSON</button>
+    </details>
+  </section>
+
+  <footer>Created by the EduVision Flow Vis evaluation function.</footer>
+</main>
+
+<script id="report-data" type="application/json">__REPORT_DATA__</script>
+<script>
+(function () {
+  "use strict";
+
+  const data = JSON.parse(document.getElementById("report-data").textContent);
+  const settings = data.settings || {};
+  const images = data.images || [];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  // ---------- helpers ----------
+  // Builds an element. Strings are added as text nodes, so names that come
+  // from the student's upload can never be interpreted as HTML.
+  function el(tag, props, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props || {})) {
+      if (value == null || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "style") for (const [p, v] of Object.entries(value)) node.style.setProperty(p, v);
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+    for (const child of children.flat()) if (child != null && child !== false) node.append(child);
+    return node;
+  }
+  const $ = (id) => document.getElementById(id);
+  const fmtConf = (c) => Number(c).toFixed(2);
+  const fmtTime = (s) => (s < 1 ? Math.round(s * 1000) + " ms" : s.toFixed(2) + " s");
+  const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+  const ICON_OK = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>';
+  const ICON_BAD = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg>';
+
+  // ---------- collect detections ----------
+  const entries = [];            // one per detection: {det, imageIndex, rank, row, poly, stage}
+  const classStats = new Map();  // class -> {count, best, color}
+  images.forEach((image, imageIndex) => {
+    (image.detections || []).forEach((det, i) => {
+      entries.push({ det, imageIndex, rank: i + 1, row: null, poly: null, stage: null });
+      const stat = classStats.get(det.class) || { count: 0, best: 0, color: det.color };
+      stat.count += 1;
+      stat.best = Math.max(stat.best, det.confidence);
+      classStats.set(det.class, stat);
+    });
+  });
+  const threshold = Math.min(Math.max(Number(settings.conf_threshold) || 0, 0), 1);
+  const state = { minConf: threshold, hidden: new Set() };
+
+  // ---------- header ----------
+  const correct = Boolean(data.is_correct);
+  const badge = $("verdict-badge");
+  badge.className = "badge " + (correct ? "good" : "bad");
+  badge.innerHTML = correct ? ICON_OK : ICON_BAD;  // static icons only
+  badge.append(correct ? "Correct" : "Incorrect");
+  $("verdict-title").textContent = correct ? "Response marked correct" : "Response marked incorrect";
+
+  const imagesWith = (cls) => images.filter((im) => (im.detections || []).some((d) => d.class === cls)).length;
+  let reason;
+  if (settings.target_class) {
+    const found = imagesWith(settings.target_class);
+    reason = found
+      ? `Target class “${settings.target_class}” was found in ${found} of ${plural(images.length, "photo")}.`
+      : `Target class “${settings.target_class}” was not found in any photo.`;
+  } else if (settings.target) {
+    reason = `Target class “${settings.target}” does not exist in the model, so the response cannot be marked correct.`;
+  } else {
+    reason = entries.length
+      ? "No target class was set, so any detected object makes the response correct."
+      : "No target class was set, and no objects were detected in any photo.";
+  }
+  $("verdict-reason").textContent = reason;
+
+  const generated = data.generated_at ? new Date(data.generated_at) : null;
+  const generatedEl = $("generated-at");
+  if (generated && !isNaN(generated)) {
+    // The report is in English, so the date is too, in the viewer's time zone.
+    generatedEl.textContent = generated.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "medium" });
+    generatedEl.title = data.generated_at;
+  } else {
+    generatedEl.textContent = "unknown";
+  }
+  $("file-name").textContent = data.file_name || "";
+
+  // ---------- tiles ----------
+  const failedImages = images.filter((im) => im.load_error).length;
+  const best = entries.reduce((a, e) => (!a || e.det.confidence > a.det.confidence ? e : a), null);
+  const classNames = [...classStats.keys()];
+  const detectionValue = el("div", { class: "value" });
+  const detectionSub = el("div", { class: "sub" });
+  $("tiles").append(
+    el("div", { class: "tile" },
+      el("div", { class: "label" }, "Photos"),
+      el("div", { class: "value" }, String(images.length)),
+      el("div", { class: "sub" }, failedImages ? `${failedImages} could not be loaded` : "All loaded")),
+    el("div", { class: "tile" },
+      el("div", { class: "label" }, "Detections shown"),
+      detectionValue, detectionSub),
+    el("div", { class: "tile" },
+      el("div", { class: "label" }, "Classes found"),
+      el("div", { class: "value" }, String(classNames.length)),
+      el("div", { class: "sub" }, classNames.length ? classNames.slice(0, 3).join(", ") + (classNames.length > 3 ? "…" : "") : "None")),
+    el("div", { class: "tile" },
+      el("div", { class: "label" }, "Highest confidence"),
+      el("div", { class: "value" }, best ? fmtConf(best.det.confidence) : "–"),
+      el("div", { class: "sub" }, best ? best.det.class : "No detections")),
+  );
+
+  // ---------- warnings ----------
+  const warnings = data.warnings || [];
+  if (warnings.length) {
+    $("warning-list").append(...warnings.map((w) => el("li", null, w)));
+    $("warnings").hidden = false;
+  }
+
+  // ---------- settings ----------
+  const listOrAll = (v) => (Array.isArray(v) && v.length ? v.join(", ") : v ? String(v) : "All classes");
+  const modelText = settings.requested_model && settings.requested_model !== settings.model
+    ? `${settings.model} (requested ${settings.requested_model})`
+    : settings.model;
+  [
+    ["Model", modelText || "–"],
+    ["Confidence threshold", fmtConf(threshold)],
+    ["Target class", settings.target_class || settings.target || "None"],
+    ["Allowed classes", listOrAll(settings.allowed_classes)],
+    ["Annotated photos", settings.draw_images ? "Drawn and uploaded" : "Turned off"],
+  ].forEach(([k, v]) => $("settings").append(el("div", null, el("dt", null, k), el("dd", null, v))));
+
+  // ---------- class chips ----------
+  [...classStats.entries()]
+    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
+    .forEach(([cls, stat]) => {
+      const chip = el("button", {
+        type: "button", class: "chip", "aria-pressed": "true",
+        title: `Best confidence ${fmtConf(stat.best)}. Click to show or hide.`,
+        style: { "--c": stat.color },
+        onclick: () => {
+          const hide = !state.hidden.has(cls);
+          hide ? state.hidden.add(cls) : state.hidden.delete(cls);
+          chip.setAttribute("aria-pressed", String(!hide));
+          applyFilters();
+        },
+      }, el("span", { class: "swatch" }), cls, el("span", { class: "count" }, "×" + stat.count));
+      $("class-chips").append(chip);
+    });
+  if (!classStats.size) $("class-chips").hidden = true;
+
+  // ---------- slider ----------
+  const slider = $("conf-slider");
+  slider.min = String(threshold);
+  slider.value = String(threshold);
+  $("conf-output").textContent = fmtConf(threshold);
+  slider.addEventListener("input", () => {
+    state.minConf = Number(slider.value);
+    $("conf-output").textContent = fmtConf(state.minConf);
+    applyFilters();
+  });
+
+  // ---------- image cards ----------
+  function setActive(entry, on) {
+    entry.row.classList.toggle("is-active", on);
+    if (entry.poly) entry.poly.classList.toggle("is-active", on);
+    if (entry.stage) entry.stage.classList.toggle("has-active", on);
+  }
+
+  function buildStage(image, imageEntries) {
+    const w = image.width, h = image.height;
+    const stage = el("div", { class: "stage", style: {
+      "aspect-ratio": `${w} / ${h}`,
+      // Keep tall portrait photos from filling the whole screen.
+      "max-width": `min(100%, ${Math.round(540 * w / h)}px)`,
+    } });
+    const caption = el("figcaption");
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("aria-hidden", "true");
+    imageEntries.forEach((entry) => {
+      const poly = document.createElementNS(SVG_NS, "polygon");
+      poly.setAttribute("points", entry.det.corners.map((p) => p.join(",")).join(" "));
+      poly.setAttribute("class", "box");
+      poly.style.setProperty("--c", entry.det.color);
+      poly.addEventListener("mouseenter", () => setActive(entry, true));
+      poly.addEventListener("mouseleave", () => setActive(entry, false));
+      entry.poly = poly;
+      entry.stage = stage;
+      svg.append(poly);
+    });
+
+    const uploadNote = image.upload_failed ? " The annotated photo could not be uploaded." : "";
+    const showBlank = (why) => {
+      stage.querySelector("img")?.remove();
+      stage.classList.add("no-image", "drawn");
+      caption.textContent = why + " The boxes are drawn on a blank background." + uploadNote;
+    };
+    if (image.preview_url) {
+      const img = el("img", { src: image.preview_url, alt: `Photo ${image.name}`, loading: "lazy", decoding: "async" });
+      img.addEventListener("error", () => showBlank("The photo could not be shown in this browser."));
+      stage.append(img);
+      if (image.preview_kind === "original") {
+        stage.classList.add("drawn");
+        caption.textContent = "Uploaded photo with the detected boxes. Point at a box or a row to highlight it." + uploadNote;
+      } else {
+        caption.textContent = "Annotated photo. Point at a box or a row to highlight it.";
+      }
+    } else {
+      showBlank("No photo is available.");
+    }
+    stage.append(svg);
+    return el("figure", null, stage, caption);
+  }
+
+  function buildTable(imageEntries) {
+    const tbody = el("tbody");
+    imageEntries.forEach((entry) => {
+      const d = entry.det;
+      entry.row = el("tr", {
+        tabindex: "0",
+        onmouseenter: () => setActive(entry, true),
+        onmouseleave: () => setActive(entry, false),
+        onfocus: () => setActive(entry, true),
+        onblur: () => setActive(entry, false),
+      },
+        el("td", { class: "muted num" }, String(entry.rank)),
+        el("td", null, el("span", { class: "cls" }, el("span", { class: "swatch", style: { "--c": d.color } }), d.class)),
+        el("td", null, el("span", { class: "conf", style: { "--c": d.color } },
+          el("span", { class: "meter" }, el("span", { style: { width: (d.confidence * 100).toFixed(1) + "%" } })),
+          el("span", { class: "num" }, fmtConf(d.confidence)))),
+      );
+      tbody.append(entry.row);
+    });
+
+    // Sortable headers: Class sorts A-Z first, Confidence highest first.
+    const sort = { key: "confidence", dir: -1 };
+    const headers = {};
+    const header = (key, label) => {
+      headers[key] = el("th", { scope: "col" },
+        el("button", { type: "button", class: "sort", onclick: () => {
+          sort.dir = sort.key === key ? -sort.dir : (key === "class" ? 1 : -1);
+          sort.key = key;
+          render();
+        } }, label));
+      return headers[key];
+    };
+    function render() {
+      const sorted = imageEntries.slice().sort((a, b) => {
+        const cmp = sort.key === "class"
+          ? a.det.class.localeCompare(b.det.class)
+          : a.det.confidence - b.det.confidence;
+        return sort.dir * cmp || a.rank - b.rank;
+      });
+      sorted.forEach((e) => tbody.append(e.row));
+      for (const [key, th] of Object.entries(headers)) {
+        th.setAttribute("aria-sort", key === sort.key ? (sort.dir > 0 ? "ascending" : "descending") : "none");
+      }
+    }
+    const table = el("table", null,
+      el("thead", null, el("tr", null, el("th", { scope: "col" }, "#"), header("class", "Class"), header("confidence", "Confidence"))),
+      tbody);
+    render();
+    return table;
+  }
+
+  const cards = [];
+  images.forEach((image, imageIndex) => {
+    const imageEntries = entries.filter((e) => e.imageIndex === imageIndex);
+    const pill = el("span", { class: "pill" });
+    const head = el("div", { class: "image-head" }, el("h3", null, image.name), pill);
+    if (image.width && image.height) head.append(el("span", { class: "muted num", style: { "font-size": "12px" } }, `${image.width} × ${image.height} px`));
+    const card = el("article", { class: "image-card" }, head);
+
+    if (image.load_error) {
+      pill.textContent = "Not loaded";
+      card.append(el("div", { class: "error-box" }, "Could not load this photo: " + image.load_error));
+      $("images").append(card);
+      return;
+    }
+
+    const empty = el("p", { class: "empty" });
+    const list = el("div", null);
+    if (imageEntries.length) list.append(buildTable(imageEntries));
+    list.append(empty);
+    card.append(el("div", { class: "image-body" }, buildStage(image, imageEntries), list));
+    cards.push({ imageEntries, pill, empty });
+    $("images").append(card);
+  });
+  if (!images.length) $("images").append(el("p", { class: "empty" }, "No photos were submitted."));
+
+  function applyFilters() {
+    let shown = 0;
+    for (const entry of entries) {
+      const visible = entry.det.confidence >= state.minConf - 1e-9 && !state.hidden.has(entry.det.class);
+      entry.row.hidden = !visible;
+      if (entry.poly) entry.poly.classList.toggle("is-hidden", !visible);
+      if (!visible) setActive(entry, false);
+      if (visible) shown += 1;
+    }
+    for (const card of cards) {
+      const total = card.imageEntries.length;
+      const visible = card.imageEntries.filter((e) => !e.row.hidden).length;
+      card.pill.textContent = total === visible ? plural(total, "detection") : `${visible} of ${total} shown`;
+      card.empty.textContent = !total ? "No objects detected." : !visible ? "All detections are hidden by the filters." : "";
+      card.empty.hidden = !card.empty.textContent;
+    }
+    detectionValue.textContent = String(shown);
+    detectionSub.textContent = shown === entries.length ? "All detections" : `of ${entries.length} in total`;
+  }
+  applyFilters();
+
+  // ---------- timings ----------
+  const timings = (data.timings || []).filter((t) => typeof t.seconds === "number");
+  const maxTime = Math.max(...timings.map((t) => t.seconds), 1e-6);
+  timings.forEach((t) => {
+    $("timings").append(
+      el("span", { class: "label" }, t.label),
+      el("span", { class: "bar" }, el("span", { style: { width: Math.max(0.5, (t.seconds / maxTime) * 100).toFixed(1) + "%" } })),
+      el("span", { class: "val" }, fmtTime(t.seconds)),
+    );
+  });
+  $("total-time").textContent = typeof data.total_seconds === "number" ? fmtTime(data.total_seconds) : "–";
+
+  // ---------- raw data ----------
+  const raw = JSON.stringify(data, null, 2);
+  $("raw-json").textContent = raw;
+  $("copy-json").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(raw);
+      button.textContent = "Copied";
+    } catch (e) {
+      button.textContent = "Copy failed, select the text above";
+    }
+    setTimeout(() => { button.textContent = "Copy JSON"; }, 2000);
+  });
+})();
+</script>
+</body>
+</html>

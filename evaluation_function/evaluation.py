@@ -11,6 +11,9 @@ import numpy as np
 import cv2
 import time
 
+from .file_upload import upload_file
+from .report import REPORT_FOLDER, REPORT_MIME_TYPE, build_report_html, report_file_name
+
 
 # Cache for loaded models by name
 _model_cache = {}
@@ -50,6 +53,8 @@ def evaluation_function(
         )
 
     draw_images = params.get("draw_images", True)
+    # Upload a stand-alone HTML report of this evaluation and link to it.
+    html_report = params.get("html_report", False)
     model_name = params.get("model_name", DEFAULT_MODEL_NAME)
     conf_threshold = params.get("conf_threshold", 0.5)
     # Optional array of class names to restrict detection to. Names are
@@ -261,7 +266,7 @@ def evaluation_function(
                 load_times.append(time.time() - load_start)
 
                 per_image.append(
-                    {"annotated": None, "detections": [], "load_error": str(e)}
+                    {"annotated": None, "detections": [], "load_error": str(e), "size": None}
                 )
                 continue
 
@@ -309,7 +314,7 @@ def evaluation_function(
                 draw_times.append(0.0)
 
             per_image.append(
-                {"annotated": annotated, "detections": detections, "load_error": None}
+                {"annotated": annotated, "detections": detections, "load_error": None, "size": img.size}
             )
 
         avg_load_time = sum(load_times) / len(load_times) if load_times else 0.0
@@ -362,9 +367,11 @@ def evaluation_function(
             upload_start = time.time()
             try:
                 url = upload_image(img, "eduvision")
+                info["annotated_url"] = url
                 # add separate feedback for this uploaded annotated image (Markdown image)
                 append_feedback(f"Uploaded Image [{idx}]", f"![{orig_name}]({url}) \n\n---\n\n")
             except Exception as e:
+                info["upload_error"] = str(e)
                 # Only leak the underlying error (e.g. AWS/S3 details) in debug mode.
                 detail = f": {e}" if params.get('debug', False) else ""
                 append_feedback(f"Uploaded Image [{idx}]", f"*Image upload failed for {orig_name}{detail}* \n\n---\n\n")
@@ -376,6 +383,97 @@ def evaluation_function(
     avg_upload_time = sum(upload_times) / len(upload_times) if upload_times else 0.0
 
     feedback_time = time.time() - feedback_start
+
+    # With a target, the response is correct if that class is detected in at
+    # least one image. Without one, any detection in any image is enough.
+    if target:
+        is_correct = any(
+            det[2] == target_name
+            for info in per_image
+            for det in info["detections"]
+        )
+    else:
+        is_correct = any(info["detections"] for info in per_image)
+
+    report_time = 0.0
+
+    if html_report:
+        report_start = time.time()
+        report_name = report_file_name()
+
+        def color_hex(class_name):
+            # Same colour as the box drawn on the annotated image.
+            return "#%02x%02x%02x" % get_class_color(class_name)
+
+        report_images = []
+        for idx, info in enumerate(per_image):
+            original_url = str(response[idx].get("url", ""))
+            if info.get("annotated_url"):
+                preview_url, preview_kind = info["annotated_url"], "annotated"
+            elif original_url.startswith(("http://", "https://", "file://")):
+                preview_url, preview_kind = original_url, "original"
+            else:
+                preview_url, preview_kind = None, None
+            width, height = info["size"] or (None, None)
+            report_images.append({
+                "name": str(response[idx].get("name", f"image_{idx}.jpg")),
+                "width": width,
+                "height": height,
+                "preview_url": preview_url,
+                "preview_kind": preview_kind,
+                "load_error": info["load_error"],
+                "upload_failed": bool(info.get("upload_error")),
+                "detections": [
+                    {
+                        "class": str(cls),
+                        "confidence": round(conf, 4),
+                        "corners": [[round(x, 1), round(y, 1)] for x, y in corners],
+                        "color": color_hex(str(cls)),
+                    }
+                    for corners, conf, cls in info["detections"]
+                ],
+            })
+
+        report_data = {
+            "file_name": report_name,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "is_correct": is_correct,
+            "settings": {
+                "model": safe_model_name,
+                "requested_model": str(model_name),
+                "conf_threshold": conf_threshold,
+                "target": target,
+                "target_class": target_name,
+                "allowed_classes": allowed_classes,
+                "draw_images": bool(draw_images),
+            },
+            "warnings": warnings,
+            "images": report_images,
+            "timings": [
+                {"label": "Model load", "seconds": model_load_time},
+                {"label": "Image load", "seconds": avg_load_time},
+                {"label": "Prediction", "seconds": avg_prediction_time},
+                {"label": "Detection processing", "seconds": avg_process_time},
+                {"label": "Drawing", "seconds": avg_draw_time},
+                {"label": "Annotated photo upload", "seconds": avg_upload_time},
+            ],
+            "total_seconds": time.time() - start_total,
+        }
+
+        try:
+            html = build_report_html(report_data)
+            report_url = upload_file(html.encode("utf-8"), report_name, REPORT_MIME_TYPE, REPORT_FOLDER)
+            append_feedback(
+                "Evaluation Report",
+                f"### Evaluation report\n\n"
+                f"[Open the evaluation report]({report_url})\n\n"
+                f"File name: `{report_name}`\n\n---\n\n",
+            )
+        except Exception as e:
+            detail = f": {e}" if params.get('debug', False) else ""
+            append_feedback("Evaluation Report", f"*Evaluation report upload failed{detail}* \n\n---\n\n")
+
+        report_time = time.time() - report_start
 
     total_time = time.time() - start_total
 
@@ -412,19 +510,9 @@ def evaluation_function(
             f"| Avg upload | {avg_upload_time:.3f} |\n"
             f"| Analysis | {analysis_time:.3f} |\n"
             f"| Feedback | {feedback_time:.3f} |\n"
+            f"| HTML report | {report_time:.3f} |\n"
             f"| **Total** | **{total_time:.3f}** |\n"
         )
-
-    # With a target, the response is correct if that class is detected in at
-    # least one image. Without one, any detection in any image is enough.
-    if target:
-        is_correct = any(
-            det[2] == target_name
-            for info in per_image
-            for det in info["detections"]
-        )
-    else:
-        is_correct = any(info["detections"] for info in per_image)
 
     return Result(
         is_correct=is_correct,
