@@ -55,6 +55,7 @@ Parameters are optional settings that change how the function behaves. In Lambda
 | `allowed_classes` | list of text | none (all classes) | Only look for these classes. See [Filtering classes](#filtering-classes). |
 | `draw_images` | `true` or `false` | `true` | Whether to show the student a copy of each photo with boxes drawn on it. Set it to `false` for a text-only list. |
 | `html_report` | `true` or `false` | `false` | Uploads an interactive web page reporting this evaluation and adds a link to it at the end of the feedback. See [HTML report](#html-report). **For testing only: students can open the report.** |
+| `heartbeat_seconds` | number of seconds, or `true` | none (off) | Experiment: starts a background thread that keeps uploading how long it has been running, every 10 seconds, for this many seconds. See [Background heartbeat](#background-heartbeat). **For testing only.** |
 | `debug` | `true` or `false` | `false` | Adds technical details to the feedback: class filter results, upload error details, the original photos and how long each step took. **For testing only: students can see this output.** |
 | `debug_response` | `true` or `false` | `false` | Adds the raw submitted data to the feedback. **For testing only: students can see this output.** |
 
@@ -132,6 +133,24 @@ The date and time are UTC, for example `eduvision-report-20261127-184208-5d4af96
 > The link appears in the student's feedback, and anyone with the link can open the report. The report lists every setting, including `target`, so use it only while testing.
 
 If the upload fails, the feedback says "Evaluation report upload failed" and everything else is unchanged. With `debug` set to `true`, the storage error is shown as well.
+
+### Background heartbeat
+
+`heartbeat_seconds` tests what happens to work that is still running after the function has returned its result. It starts a background thread that writes how long it has been running to a small JSON file every 10 seconds, and uploads it under the same name each time, overwriting the previous version. The file has the report's name with `-heartbeat` added:
+
+```text
+eduvision/reports/eduvision-report-20261127-184208-5d4af96e-heartbeat.json
+```
+
+The feedback links to the file. With `html_report` on as well, the report has a **Background thread** section that reads the file every 5 seconds and shows how long the thread has run, how long ago it last wrote, its log, and the file's name.
+
+> [!NOTE]
+> On AWS Lambda, expect the thread to stop as soon as the function returns. Lambda freezes the whole environment once the response is sent, and the thread only continues if another request reaches the same instance. Its next log line then says how long it was paused. The report shows a frozen thread as **Not updating**.
+
+- The thread runs for `heartbeat_seconds`, between 10 and 900 seconds. `true` means 120 seconds.
+- At most 3 heartbeats run at once in one process. A further one does not start, and the feedback says why.
+- Each heartbeat uploads a file every 10 seconds, so leave it off outside tests.
+- The thread writes its log lines to standard error, which ends up in the function's logs (CloudWatch on AWS).
 
 ## Available classes
 
@@ -242,6 +261,7 @@ evaluation_function/main.py             # entry point that starts the function
 evaluation_function/evaluation.py       # detection and feedback logic
 evaluation_function/evaluation_test.py  # evaluation tests
 evaluation_function/file_upload.py      # uploads any file under a chosen name
+evaluation_function/heartbeat.py        # background thread for the heartbeat_seconds experiment
 evaluation_function/report.py           # builds the HTML report
 evaluation_function/report_template.html # HTML report page: layout, CSS and JavaScript
 evaluation_function/preview.py          # preview (empty, because the response is an image)

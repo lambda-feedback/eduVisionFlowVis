@@ -173,6 +173,35 @@
   .bars .val { font-size: 13px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
   .total { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 14px; display: flex; justify-content: space-between; }
 
+  /* Background heartbeat */
+  .live h2 { display: flex; align-items: center; gap: 10px; }
+  .live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .live-dot.on { background: var(--good); animation: pulse 1.6s ease-out infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent); }
+    100% { box-shadow: 0 0 0 10px transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) { .live-dot.on { animation: none; } }
+  .status-pill { font-size: 13px; font-weight: 650; padding: 4px 12px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+  .status-pill.good { color: var(--good); background: var(--good-bg); }
+  .status-pill.warn { color: var(--warn); background: var(--warn-bg); }
+  .status-pill.bad { color: var(--bad); background: var(--bad-bg); }
+  .hb-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px 24px; }
+  .hb-stats .label { font-size: 13px; color: var(--muted); }
+  .hb-stats .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 16px 0 14px; }
+  .progress span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .4s; }
+  .hb-note { margin: 0 0 12px; font-size: 14px; }
+  .hb-note:empty { display: none; }
+  .hb-log {
+    list-style: none; margin: 0; padding: 10px 14px; border-radius: 10px; background: var(--surface-2);
+    max-height: 180px; overflow: auto; font: 12px/1.65 ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+  }
+  .hb-log:empty { display: none; }
+  .hb-file { margin: 12px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .hb-file code { color: var(--text); background: var(--surface-2); padding: 1px 6px; border-radius: 6px; }
+  .hb-file a { color: var(--accent); }
+
   details summary { cursor: pointer; font-weight: 650; }
   details pre {
     margin: 12px 0 0; max-height: 360px; overflow: auto; padding: 14px; border-radius: 10px;
@@ -204,6 +233,24 @@
   <noscript><p class="callout">This report needs JavaScript to display its results.</p></noscript>
 
   <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="card live" id="heartbeat" hidden>
+    <div class="card-head">
+      <h2><span class="live-dot" id="hb-dot" aria-hidden="true"></span>Background thread</h2>
+      <span class="status-pill" id="hb-status" role="status">Waiting</span>
+    </div>
+    <div id="hb-body">
+      <div class="hb-stats">
+        <div><div class="label">Running for</div><div class="value" id="hb-elapsed">–</div></div>
+        <div><div class="label">Last update</div><div class="value" id="hb-ago">–</div></div>
+        <div><div class="label">Updates written</div><div class="value" id="hb-beats">–</div></div>
+      </div>
+      <div class="progress" aria-hidden="true"><span id="hb-progress"></span></div>
+    </div>
+    <p class="hb-note" id="hb-note"></p>
+    <ol class="hb-log" id="hb-log" aria-label="Thread log, newest first"></ol>
+    <p class="hb-file" id="hb-file-row">Heartbeat file <code id="hb-file"></code> · <a id="hb-link" target="_blank" rel="noopener">open</a> · read every 5 s</p>
+  </section>
 
   <section class="callout" id="warnings" hidden>
     <h2>Warnings</h2>
@@ -562,6 +609,95 @@
     );
   });
   $("total-time").textContent = typeof data.total_seconds === "number" ? fmtTime(data.total_seconds) : "–";
+
+  // ---------- background heartbeat ----------
+  // The evaluation may leave a thread running that overwrites a JSON file
+  // every few seconds. Read that file again and again and show it live.
+  const POLL_MS = 5000;
+  const fmtDuration = (seconds) => {
+    const s = Math.max(0, Math.round(seconds));
+    if (s < 60) return s + " s";
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m} min ${s % 60} s`;
+    return `${Math.floor(m / 60)} h ${m % 60} min`;
+  };
+
+  (function setupHeartbeat() {
+    const hb = data.heartbeat;
+    if (!hb && !data.heartbeat_problem) return;
+    $("heartbeat").hidden = false;
+    const statusEl = $("hb-status"), noteEl = $("hb-note"), dot = $("hb-dot");
+    const setStatus = (text, tone) => {
+      statusEl.textContent = text;
+      statusEl.className = "status-pill" + (tone ? " " + tone : "");
+      dot.classList.toggle("on", tone === "good");
+    };
+
+    if (!hb) {
+      setStatus("Not started", "bad");
+      noteEl.textContent = "The background thread did not start. " + data.heartbeat_problem;
+      $("hb-body").hidden = true;
+      $("hb-file-row").hidden = true;
+      return;
+    }
+
+    $("hb-file").textContent = hb.file_name;
+    $("hb-link").href = hb.url;
+    const interval = Number(hb.interval_seconds) || 10;
+    const duration = Number(hb.duration_seconds) || 0;
+    let last = null, readError = null, timer = null;
+
+    function render() {
+      if (!last) {
+        setStatus(readError ? "Cannot read" : "Waiting", readError ? "bad" : "");
+        noteEl.textContent = readError
+          ? `The heartbeat file could not be read (${readError}). Trying again every ${POLL_MS / 1000} s.`
+          : "Waiting for the first update…";
+        return;
+      }
+      const ago = (Date.now() - Date.parse(last.updated_at)) / 1000;
+      $("hb-elapsed").textContent = fmtDuration(last.elapsed_seconds);
+      $("hb-ago").textContent = fmtDuration(ago) + " ago";
+      $("hb-beats").textContent = String(last.beats);
+      $("hb-progress").style.width = (duration ? Math.min(100, (last.elapsed_seconds / duration) * 100) : 0).toFixed(1) + "%";
+
+      let note;
+      if (last.status === "finished") {
+        setStatus("Finished", "");
+        note = `The thread ran for its full ${fmtDuration(duration)} and stopped.`;
+      } else if (ago > interval * 2.5) {
+        setStatus("Not updating", "warn");
+        note = `No update for ${fmtDuration(ago)}, although the thread should write one every ${fmtDuration(interval)}. ` +
+          "On AWS Lambda the thread is frozen once the evaluation returns, and only continues if another request reaches the same instance.";
+      } else {
+        setStatus("Running", "good");
+        note = `The thread writes an update every ${fmtDuration(interval)}, for up to ${fmtDuration(duration)}.`;
+      }
+      if (readError) note += ` The last read failed (${readError}), so this may be out of date.`;
+      noteEl.textContent = note;
+    }
+
+    async function poll() {
+      try {
+        // A unique query string and no-store make sure each read gets the
+        // newest version, not a cached one.
+        const url = hb.url + (hb.url.includes("?") ? "&" : "?") + "t=" + Date.now();
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        last = await res.json();
+        readError = null;
+        $("hb-log").replaceChildren(...(last.log || []).slice().reverse().map((line) => el("li", null, line)));
+      } catch (e) {
+        readError = (e && e.message) || String(e);
+      }
+      render();
+      if (last && last.status === "finished") clearInterval(timer);
+    }
+
+    poll();
+    timer = setInterval(poll, POLL_MS);
+    setInterval(render, 1000);
+  })();
 
   // ---------- raw data ----------
   const raw = JSON.stringify(data, null, 2);

@@ -1,13 +1,30 @@
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
 from .evaluation import DEFAULT_MODEL_NAME, Params, _load_model, evaluation_function
 from .file_upload import FileUploadError
+from .heartbeat import HeartbeatError
 from .report_test import embedded_data
+
+
+class FakeReportStorage:
+    """Stands in for upload_file and keeps what was uploaded."""
+
+    def __init__(self):
+        self.uploads = []
+
+    def upload(self, data, filename, mime_type, folder="eduvision"):
+        self.uploads.append({"data": data, "filename": filename, "mime_type": mime_type, "folder": folder})
+        return f"https://example.com/{folder}/{filename}"
+
+    def report_data(self):
+        report = next(u for u in self.uploads if u["filename"].endswith(".html"))
+        return embedded_data(report["data"].decode("utf-8"))
 
 
 def local_image_response():
@@ -240,6 +257,58 @@ class TestEvaluationFunction(unittest.TestCase):
         self.assertIn("Evaluation report upload failed", result["feedback"])
         # Storage error details are only shown with `debug`.
         self.assertNotIn("bucket says no", result["feedback"])
+
+    def test_heartbeat_started_and_shown_in_report(self):
+        storage = FakeReportStorage()
+        started = []
+
+        def fake_start_heartbeat(filename, duration, upload, folder):
+            started.append({"filename": filename, "duration": duration, "folder": folder})
+            return SimpleNamespace(url=f"https://example.com/{folder}/{filename}", filename=filename,
+                                   interval=10, duration=duration)
+
+        params = Params(draw_images=False, html_report=True, heartbeat_seconds=60)
+        with patch("evaluation_function.evaluation.upload_file", storage.upload), \
+                patch("evaluation_function.evaluation.start_heartbeat", fake_start_heartbeat):
+            result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertEqual(len(started), 1)
+        report_name = storage.uploads[0]["filename"]
+        heartbeat_name = report_name.replace(".html", "-heartbeat.json")
+        self.assertEqual(started[0], {"filename": heartbeat_name, "duration": 60, "folder": "eduvision/reports"})
+        self.assertIn(f"https://example.com/eduvision/reports/{heartbeat_name}", result["feedback"])
+        self.assertIn(heartbeat_name, result["feedback"])
+
+        data = storage.report_data()
+        self.assertEqual(data["heartbeat"]["file_name"], heartbeat_name)
+        self.assertEqual(data["heartbeat"]["interval_seconds"], 10)
+        self.assertIsNone(data["heartbeat_problem"])
+
+    def test_heartbeat_that_cannot_start_is_reported(self):
+        storage = FakeReportStorage()
+        refusing_start = MagicMock(side_effect=HeartbeatError("3 background heartbeats are already running."))
+
+        params = Params(draw_images=False, html_report=True, heartbeat_seconds=60)
+        with patch("evaluation_function.evaluation.upload_file", storage.upload), \
+                patch("evaluation_function.evaluation.start_heartbeat", refusing_start):
+            result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("Background heartbeat did not start. 3 background heartbeats", result["feedback"])
+        data = storage.report_data()
+        self.assertIsNone(data["heartbeat"])
+        self.assertIn("already running", data["heartbeat_problem"])
+
+    def test_invalid_heartbeat_seconds_warns(self):
+        fake_start = MagicMock()
+
+        with patch("evaluation_function.evaluation.start_heartbeat", fake_start):
+            result = evaluation_function(
+                local_image_response(), "test_answer", Params(draw_images=False, heartbeat_seconds="soon")
+            ).to_dict()
+
+        fake_start.assert_not_called()
+        self.assertIn("**Warning:** `heartbeat_seconds` must be a number", result["feedback"])
 
     def test_target_is_detected_even_if_not_in_allowed_classes(self):
         params = Params(draw_images=False, target="Main Section", allowed_classes=["Pump"])

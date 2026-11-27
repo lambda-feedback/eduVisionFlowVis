@@ -12,6 +12,7 @@ import cv2
 import time
 
 from .file_upload import upload_file
+from .heartbeat import HeartbeatError, heartbeat_duration, start_heartbeat
 from .report import REPORT_FOLDER, REPORT_MIME_TYPE, build_report_html, report_file_name
 
 
@@ -68,6 +69,14 @@ def evaluation_function(
 
     # Configuration problems shown at the top of the feedback.
     warnings = []
+
+    # Optional background thread that keeps uploading how long it has run, to
+    # test what happens to work left running after this function returns.
+    try:
+        heartbeat_seconds = heartbeat_duration(params.get("heartbeat_seconds"))
+    except HeartbeatError as e:
+        warnings.append(str(e))
+        heartbeat_seconds = None
 
     model_load_start = time.time()
 
@@ -396,10 +405,39 @@ def evaluation_function(
         is_correct = any(info["detections"] for info in per_image)
 
     report_time = 0.0
+    # The report and the heartbeat file share one name, so they pair up easily.
+    report_name = report_file_name() if html_report or heartbeat_seconds else None
+
+    heartbeat = None
+    heartbeat_problem = None
+
+    if heartbeat_seconds:
+        heartbeat_name = report_name[:-len(".html")] + "-heartbeat.json"
+        try:
+            heartbeat = start_heartbeat(heartbeat_name, heartbeat_seconds, upload_file, REPORT_FOLDER)
+        except HeartbeatError as e:
+            heartbeat_problem = str(e)
+        except Exception as e:
+            detail = f": {e}" if params.get('debug', False) else "."
+            heartbeat_problem = f"Its file could not be uploaded{detail}"
+
+        if heartbeat:
+            append_feedback(
+                "Background Heartbeat",
+                f"### Background heartbeat\n\n"
+                f"A background thread uploads how long it has been running every "
+                f"{heartbeat.interval:g} s, for up to {heartbeat.duration:g} s: "
+                f"[heartbeat file]({heartbeat.url})\n\n"
+                f"File name: `{heartbeat_name}`\n\n---\n\n",
+            )
+        else:
+            append_feedback(
+                "Background Heartbeat",
+                f"*Background heartbeat did not start. {heartbeat_problem}* \n\n---\n\n",
+            )
 
     if html_report:
         report_start = time.time()
-        report_name = report_file_name()
 
         def color_hex(class_name):
             # Same colour as the box drawn on the annotated image.
@@ -458,6 +496,13 @@ def evaluation_function(
                 {"label": "Annotated photo upload", "seconds": avg_upload_time},
             ],
             "total_seconds": time.time() - start_total,
+            "heartbeat": {
+                "url": heartbeat.url,
+                "file_name": heartbeat.filename,
+                "interval_seconds": heartbeat.interval,
+                "duration_seconds": heartbeat.duration,
+            } if heartbeat else None,
+            "heartbeat_problem": heartbeat_problem,
         }
 
         try:
