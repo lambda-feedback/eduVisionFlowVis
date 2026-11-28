@@ -314,6 +314,31 @@ class TestEvaluationFunction(unittest.TestCase):
         self.assertIsNone(data["heartbeat"])
         self.assertIn("could not be uploaded", data["heartbeat_problem"])
 
+    def test_heartbeat_status_reports_instead_of_evaluating(self):
+        fake_status = MagicMock(return_value="### Heartbeat status\n\nall quiet")
+
+        with patch("evaluation_function.evaluation.status_report", fake_status):
+            # No photo needed: the status is answered before anything is evaluated.
+            result = evaluation_function([], "test_answer", Params(heartbeat_status=True)).to_dict()
+
+        fake_status.assert_called_once()
+        self.assertIn("all quiet", result["feedback"])
+        self.assertNotIn("No Image Provided", result["feedback"])
+
+    def test_heartbeat_without_upload(self):
+        started = []
+
+        def fake_start_heartbeat(filename, duration, upload, folder):
+            started.append(upload)
+            return SimpleNamespace(url=None, filename=filename, interval=10, duration_seconds=duration)
+
+        params = Params(draw_images=False, heartbeat_seconds=60, heartbeat_upload=False)
+        with patch("evaluation_function.evaluation.start_heartbeat", fake_start_heartbeat):
+            result = evaluation_function(local_image_response(), "test_answer", params).to_dict()
+
+        self.assertEqual(started, [None])
+        self.assertIn("send `heartbeat_status: true` to see it", result["feedback"])
+
     def test_invalid_heartbeat_seconds_warns(self):
         fake_start = MagicMock()
 
