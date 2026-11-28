@@ -17,11 +17,9 @@ shows how long the thread was paused whenever that happens.
 """
 import json
 import os
-import socket
 import sys
 import threading
 import time
-from collections import deque
 from datetime import datetime, timezone
 
 from . import keepalive_extension as keepalive
@@ -36,8 +34,6 @@ LOG_LINES = 50
 
 _lock = threading.Lock()
 _active = []  # running heartbeats, oldest first
-_recent = deque(maxlen=10)  # heartbeats started in this process, for status_report()
-PROCESS_STARTED_AT = time.time()
 
 
 class HeartbeatError(Exception):
@@ -116,7 +112,6 @@ class Heartbeat:
         self.beats = 0
         self.log = []
         self.kept_awake_until = None
-        self.status = "running"
         self.url = None
         self.thread = None
 
@@ -143,26 +138,9 @@ class Heartbeat:
             "log": self.log,
         }
 
-    def snapshot(self, now):
-        """The heartbeat's state as seen from this process, for status_report()."""
-        return {
-            "file_name": self.filename,
-            "status": self.status,
-            "started_at": _iso(self.started_at),
-            "last_beat_at": _iso(self.last_beat_at),
-            "seconds_since_last_beat": round(now - self.last_beat_at, 1),
-            "beats": self.beats,
-            "duration_seconds": self.duration,
-            "log": self.log[-15:],
-        }
-
     def record(self, status, message, now=None):
-        """Log one line and upload the current state, returning the file's URL.
-
-        Without an upload function nothing is uploaded and None is returned.
-        """
+        """Log one line and upload the current state, returning the file's URL."""
         now = time.time() if now is None else now
-        self.status = status
         line = f"{_clock(now - self.started_at)}  {message}"
         self.log.append(line)
         del self.log[:-LOG_LINES]
@@ -170,8 +148,6 @@ class Heartbeat:
         # messages between Shimmy and this worker, and stray text there would
         # break them. Shimmy forwards stderr to the logs (CloudWatch on AWS).
         print(f"[heartbeat {self.filename}] {line}", file=sys.stderr, flush=True)
-        if self._upload is None:
-            return None
         data = json.dumps(self.state(status, now)).encode("utf-8")
         return self._upload(data, self.filename, MIME_TYPE, self.folder)
 
@@ -240,8 +216,7 @@ def start_heartbeat(filename, duration, upload, folder):
     """Upload the first state, then start the thread that keeps updating it.
 
     `upload` is called as `upload(data, filename, mime_type, folder)` and must
-    return the file's URL. With `upload=None` nothing is uploaded, and the
-    state is only visible through status_report(). The first upload happens before this returns, so
+    return the file's URL. The first upload happens before this returns, so
     the file already exists when the report first reads it; if it fails, its
     exception is raised and no thread is started. When MAX_RUNNING heartbeats
     are already running, the oldest is stopped.
@@ -253,7 +228,6 @@ def start_heartbeat(filename, duration, upload, folder):
         while len(_active) >= MAX_RUNNING:
             _active.pop(0).stop(f"to make room for a newer heartbeat (at most {MAX_RUNNING} run at once)")
         _active.append(heartbeat)
-        _recent.append(heartbeat)
         _update_keepalive()
 
     heartbeat.thread = threading.Thread(target=heartbeat._run, name=f"heartbeat-{filename}", daemon=True)
@@ -265,22 +239,3 @@ def start_heartbeat(filename, duration, upload, folder):
             _update_keepalive()
         raise
     return heartbeat
-
-
-def status_report():
-    """Markdown with the heartbeats started in this process and the process itself.
-
-    Two calls answered by the same process show whether its threads kept
-    running between them.
-    """
-    now = time.time()
-    with _lock:
-        heartbeats = list(_recent)
-    data = {
-        "host": socket.gethostname(),
-        "pid": os.getpid(),
-        "process_running_for_seconds": round(now - PROCESS_STARTED_AT, 1),
-        "now": _iso(now),
-        "heartbeats": [hb.snapshot(now) for hb in heartbeats],
-    }
-    return "### Heartbeat status\n\n```json\n" + json.dumps(data, indent=2) + "\n```\n"

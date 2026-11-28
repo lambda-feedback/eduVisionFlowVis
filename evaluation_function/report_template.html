@@ -642,15 +642,6 @@
       return;
     }
 
-    if (!hb.url) {
-      setStatus("Not uploaded", "");
-      noteEl.textContent = `The background thread ${hb.file_name} keeps its state in memory only, so this report cannot follow it. ` +
-        "Send an evaluation with `heartbeat_status: true` to see it.";
-      $("hb-body").hidden = true;
-      $("hb-file-row").hidden = true;
-      return;
-    }
-
     $("hb-file").textContent = hb.file_name;
     $("hb-link").href = hb.url;
     const interval = Number(hb.interval_seconds) || 10;

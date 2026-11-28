@@ -166,19 +166,6 @@ class TestHeartbeat(unittest.TestCase):
         self.assertEqual(last["kept_awake_until"], heartbeat._iso(holding_until))
         self.assertTrue(any("keep-alive extension keeps the instance awake until" in line for line in last["log"]))
 
-    def test_runs_without_uploading_and_shows_in_status_report(self):
-        hb = start_heartbeat("memory-only.json", 0.2, None, "f")
-        hb.thread.join(timeout=5)
-
-        self.assertIsNone(hb.url)
-        report = heartbeat.status_report()
-        data = json.loads(report.split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(data["pid"], os.getpid())
-        mine = [h for h in data["heartbeats"] if h["file_name"] == "memory-only.json"][-1]
-        self.assertEqual(mine["status"], "finished")
-        self.assertGreaterEqual(mine["beats"], 3)
-        self.assertIn("finished", mine["log"][-1])
-
     def test_logs_to_stderr_not_stdout(self):
         # With the stdio transport, stdout carries the worker's messages.
         hb = heartbeat.Heartbeat("hb.json", 1, FakeStorage().upload, "f")

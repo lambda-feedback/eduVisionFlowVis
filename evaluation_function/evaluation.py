@@ -12,7 +12,7 @@ import cv2
 import time
 
 from .file_upload import upload_file
-from .heartbeat import HeartbeatError, heartbeat_duration, start_heartbeat, status_report
+from .heartbeat import HeartbeatError, heartbeat_duration, start_heartbeat
 from .report import REPORT_FOLDER, REPORT_MIME_TYPE, build_report_html, report_file_name
 
 
@@ -40,11 +40,6 @@ def evaluation_function(
     params: Params,
 ) -> Result:
     start_total = time.time()
-
-    # Test aid for the heartbeat experiment: describe the background threads
-    # of this process instead of evaluating anything.
-    if params.get("heartbeat_status", False):
-        return Result(is_correct=False, feedback_items=[("Heartbeat Status", status_report())])
 
     if not response:
         # Note: the first element of a feedback_items tuple is only an
@@ -419,15 +414,12 @@ def evaluation_function(
     if heartbeat_seconds:
         heartbeat_name = report_name[:-len(".html")] + "-heartbeat.json"
         try:
-            # `heartbeat_upload: false` keeps the state in memory only, for
-            # platforms without storage; `heartbeat_status` then shows it.
-            heartbeat_upload = upload_file if params.get("heartbeat_upload", True) else None
-            heartbeat = start_heartbeat(heartbeat_name, heartbeat_seconds, heartbeat_upload, REPORT_FOLDER)
+            heartbeat = start_heartbeat(heartbeat_name, heartbeat_seconds, upload_file, REPORT_FOLDER)
         except Exception as e:
             detail = f": {e}" if params.get('debug', False) else "."
             heartbeat_problem = f"Its first update could not be uploaded{detail}"
 
-        if heartbeat and heartbeat.url:
+        if heartbeat:
             append_feedback(
                 "Background Heartbeat",
                 f"### Background heartbeat\n\n"
@@ -435,15 +427,6 @@ def evaluation_function(
                 f"{heartbeat.interval:g} s, for up to {heartbeat.duration_seconds:g} s: "
                 f"[heartbeat file]({heartbeat.url})\n\n"
                 f"File name: `{heartbeat_name}`\n\n---\n\n",
-            )
-        elif heartbeat:
-            append_feedback(
-                "Background Heartbeat",
-                f"### Background heartbeat\n\n"
-                f"A background thread records how long it has been running every "
-                f"{heartbeat.interval:g} s, for up to {heartbeat.duration_seconds:g} s. "
-                f"It uploads nothing; send `heartbeat_status: true` to see it.\n\n"
-                f"Name: `{heartbeat_name}`\n\n---\n\n",
             )
         else:
             append_feedback(

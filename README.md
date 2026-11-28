@@ -159,13 +159,6 @@ While the extension keeps an instance awake, that instance cannot take other req
 
 If the extension cannot get telemetry from Lambda, it never keeps the instance awake, and the function behaves as if the extension were not there.
 
-#### Test aids
-
-- `"heartbeat_upload": false` runs the heartbeat without uploading anything, for platforms without storage. The report cannot follow it then.
-- `"heartbeat_status": true` answers with the heartbeats started in the process that handles the request: their state, number of beats, time since the last beat and log, plus the host name and process ID. Nothing is evaluated, and no photo is needed. Two such requests answered by the same process show whether its threads kept running in between.
-
-The [Cloud Run experiment](.github/workflows/cloud-run-experiment.yml) workflow deploys the function as a separate public Google Cloud Run service, `eduvisionflowvis-staging`, with CPU always allocated, to test the heartbeat on a platform that does not freeze instances. It does not touch the Lambda Feedback functions on AWS.
-
 #### Limits
 
 - The thread stops after `heartbeat_seconds`, from 10 seconds to 3600 seconds (one hour). `true` means 3600 seconds.
